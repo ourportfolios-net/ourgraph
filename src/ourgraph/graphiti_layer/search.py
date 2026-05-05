@@ -1,5 +1,4 @@
-"""
-GraphRAG search interface.
+"""GraphRAG search interface.
 
 Provides a high-level search API over Graphiti's temporal knowledge graph.
 The LLM receives graph context automatically via Graphiti's hybrid retrieval.
@@ -12,25 +11,37 @@ Key features provided by Graphiti:
 
 from __future__ import annotations
 
+import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING
 
-from graphiti_core import Graphiti
 from graphiti_core.nodes import EpisodeType
 from graphiti_core.search.search_config import SearchConfig
 
-from ourgraph.config import AppSettings
 from ourgraph.graphiti_layer.client import (
     GRAPHITI_GRAPH_SUFFIX,
     build_graphiti_client,
 )
 
+if TYPE_CHECKING:
+    from graphiti_core import Graphiti
+
+    from ourgraph.config import AppSettings
+
 logger = logging.getLogger(__name__)
 
 
+def _serialize_for_json(obj: dict) -> dict:
+    """Convert datetime/date objects in dict to ISO format strings for JSON serialization."""
+    return {
+        k: (v.isoformat() if isinstance(v, (datetime, date)) else v)
+        for k, v in obj.items()
+    }
+
+
 class GraphRAGSearch:
-    """
-    High-level GraphRAG search over the stock knowledge graph.
+    """High-level GraphRAG search over the stock knowledge graph.
 
     Usage::
 
@@ -62,8 +73,7 @@ class GraphRAGSearch:
         reference_time: datetime | None = None,
         source_description: str = "ourgraph",
     ) -> None:
-        """
-        Add a free-text episode (e.g. analyst report, financial summary).
+        """Add a free-text episode (e.g. analyst report, financial summary).
 
         Graphiti extracts entities and relationships automatically using the
         configured LLM. For small local models, keep `body` concise (<500 words)
@@ -74,6 +84,7 @@ class GraphRAGSearch:
             body: The text content.
             reference_time: When this information was true. Defaults to now.
             source_description: Free-form provenance label.
+
         """
         if reference_time is None:
             reference_time = datetime.now(UTC)
@@ -95,21 +106,18 @@ class GraphRAGSearch:
         reference_time: datetime | None = None,
         source_description: str = "ourgraph",
     ) -> None:
-        """
-        Add a structured JSON episode (e.g. financial statement snapshot).
+        """Add a structured JSON episode (e.g. financial statement snapshot).
 
         JSON episodes are ingested without LLM extraction — the structure
         is preserved as-is. This is the recommended path for structured data
         when using small local models.
         """
-        import json
-
         if reference_time is None:
             reference_time = datetime.now(UTC)
 
         await self._client.add_episode(
             name=name,
-            episode_body=json.dumps(data, ensure_ascii=False),
+            episode_body=json.dumps(_serialize_for_json(data), ensure_ascii=False),
             source=EpisodeType.json,
             reference_time=reference_time,
             source_description=source_description,
@@ -126,8 +134,7 @@ class GraphRAGSearch:
         question: str,
         num_results: int = 10,
     ) -> list[dict]:
-        """
-        Run a hybrid GraphRAG search.
+        """Run a hybrid GraphRAG search.
 
         Returns a list of fact dicts from Graphiti's knowledge graph,
         ranked by relevance. The LLM can then synthesise an answer
@@ -139,6 +146,7 @@ class GraphRAGSearch:
 
         Returns:
             List of result dicts with keys: fact, valid_at, invalid_at, ...
+
         """
         results = await self._client.search(
             query=question,
@@ -157,8 +165,7 @@ class GraphRAGSearch:
         ]
 
     async def get_nodes(self, query: str, num_results: int = 10) -> list[dict]:
-        """
-        Retrieve entity nodes matching a query.
+        """Retrieve entity nodes matching a query.
 
         Useful for finding companies, sectors, or officers by name.
         """

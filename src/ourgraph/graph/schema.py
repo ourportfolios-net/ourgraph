@@ -1,20 +1,10 @@
-"""
-Graph schema constants.
+"""Graph schema constants — aligned with the paper's KG structure.
 
-All node labels, relationship types, and property names live here.
-The graph builder uses these constants — never string literals.
-This makes refactoring safe and keeps the schema documented in one place.
-
-Schema is derived from the paper:
-  "Knowledge Graph Construction for Stock Markets with LLM-Based Explainable Reasoning"
-  arXiv:2601.11528
+Paper: "Knowledge Graph Construction for Stock Markets with LLM-Based Explainable Reasoning"
+arXiv:2601.11528
 """
 
 from __future__ import annotations
-
-# ---------------------------------------------------------------------------
-# Node labels
-# ---------------------------------------------------------------------------
 
 
 class NodeLabel:
@@ -23,43 +13,48 @@ class NodeLabel:
     INDUSTRY = "Industry"
     STOCK_PRICE = "StockPrice"
     FINANCIAL_STATEMENT = "FinancialStatement"
-    FINANCIAL_INDICATOR = "FinancialIndicator"
+    INDICATOR = "Indicator"
     OFFICER = "Officer"
-
-
-# ---------------------------------------------------------------------------
-# Relationship types
-# ---------------------------------------------------------------------------
+    DATE = "Date"
+    QUARTER = "Quarter"
+    YEAR = "Year"
 
 
 class RelType:
-    # Company → Sector / Industry hierarchy
-    BELONGS_TO_INDUSTRY = "BELONGS_TO_INDUSTRY"
-    INDUSTRY_IN_SECTOR = "INDUSTRY_IN_SECTOR"
+    # Temporal hierarchy (Date → Quarter → Year)
+    IN_QUARTER = "IN_QUARTER"
+    IN_YEAR = "IN_YEAR"
 
-    # Price & financials
-    HAS_PRICE = "HAS_PRICE"
-    HAS_STATEMENT = "HAS_STATEMENT"
+    # Company → StockPrice → Date
+    HAS_STOCK_PRICE = "HAS_STOCK_PRICE"
+    RECORDED_ON = "RECORDED_ON"
+
+    # Company → Indicator → Date/Quarter
     HAS_INDICATOR = "HAS_INDICATOR"
+    MEASURED_ON = "MEASURED_ON"
 
-    # Ownership / corporate structure
+    # Company → FinancialStatement → Quarter / Year
+    HAS_FINANCIAL_STATEMENTS = "HAS_FINANCIAL_STATEMENTS"
+    FOR_QUARTER = "FOR_QUARTER"
+    FOR_YEAR = "FOR_YEAR"
+
+    # Company → Sector/Industry
+    BELONGS_TO = "BELONGS_TO"
+    BELONGS_TO_INDUSTRY = "BELONGS_TO_INDUSTRY"
+
+    # Company ↔ Company
+    COMPETES_WITH = "COMPETES_WITH"
     SUBSIDIARY_OF = "SUBSIDIARY_OF"
-    HOLDS_STAKE_IN = "HOLDS_STAKE_IN"   # shareholder → company
+    HOLDS_STAKE_IN = "HOLDS_STAKE_IN"
 
-    # Leadership
+    # Company → Officer
     LED_BY = "LED_BY"
-
-
-# ---------------------------------------------------------------------------
-# Property keys (keep these as constants to avoid typos)
-# ---------------------------------------------------------------------------
 
 
 class Prop:
     # Shared
     SYMBOL = "symbol"
     NAME = "name"
-    UPDATED_AT = "updated_at"
 
     # Company
     EXCHANGE = "exchange"
@@ -70,35 +65,36 @@ class Prop:
     OUTSTANDING_SHARE = "outstanding_share"
     FOREIGN_PERCENT = "foreign_percent"
 
-    # Sector / Industry
-    ICB_CODE = "icb_code"
-
-    # StockPrice
+    # StockPrice (paper naming)
     DATE = "date"
-    OPEN = "open"
-    HIGH = "high"
-    LOW = "low"
-    CLOSE = "close"
+    OPEN = "open"  # stck_oprc
+    HIGH = "high"  # stck_hgpr
+    LOW = "low"  # stck_lwpr
+    CLOSE = "close"  # stck_clpr
     VOLUME = "volume"
 
+    # Indicator (paper: pbr, per, eps + full payload)
+    PBR = "pbr"
+    PER = "per"
+    EPS = "eps"
+    PAYLOAD = "payload"  # full JSON for all metrics
+
     # FinancialStatement
-    PERIOD = "period"       # 'quarter' | 'year'
+    PERIOD = "period"
     YEAR = "year"
     QUARTER = "quarter"
-    STATEMENT_TYPE = "statement_type"  # 'balance_sheet' | 'income_statement' | 'cash_flow'
-    PAYLOAD = "payload"     # JSON-serialised metric dict
+    STATEMENT_TYPE = "statement_type"
 
-    # FinancialIndicator
-    METRIC = "metric"
-    VALUE = "value"
+    # Date
+    MONTH = "month"
+    DAY = "day"
 
     # Officer
     OFFICER_NAME = "officer_name"
     POSITION = "position"
     OWN_PERCENT = "own_percent"
 
-    # Ownership edge
+    # Edges
     OWNERSHIP_PERCENT = "ownership_percent"
     STAKE_PERCENT = "stake_percent"
-    SUB_ORGAN_CODE = "sub_organ_code"
-    RELATION_TYPE = "relation_type"     # 'subsidiary' | 'associate'
+    RELATION_TYPE = "relation_type"

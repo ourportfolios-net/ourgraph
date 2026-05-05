@@ -1,5 +1,4 @@
-"""
-SQLAlchemy async + sync engines for the Supabase database.
+"""SQLAlchemy async + sync engines for the Supabase database.
 
 Mirrors the pattern from ourportfolios/utils/database/database.py:
   - NullPool for serverless-safe connections
@@ -13,8 +12,8 @@ Environment variables:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import (
@@ -27,6 +26,9 @@ from sqlalchemy.pool import NullPool
 from ourgraph.config import get_settings
 from ourgraph.utils.retry import retry_async, retry_sync
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
 
 def _strip_query_params(url: str) -> str:
     return url.split("?", maxsplit=1)[0] if "?" in url else url
@@ -35,10 +37,13 @@ def _strip_query_params(url: str) -> str:
 def _to_async_pg(url: str | None) -> str:
     """Inject asyncpg driver into a postgresql:// URL."""
     if url is None:
-        raise ValueError(
+        message = (
             "SUPABASE_DB_URL is not set. "
             "Add it to your .env: "
             "SUPABASE_DB_URL=postgresql://postgres:<pw>@db.<ref>.supabase.co:5432/postgres"
+        )
+        raise ValueError(
+            message,
         )
     url = _strip_query_params(url)
     if "postgresql+asyncpg" in url:
@@ -53,7 +58,8 @@ def _to_async_pg(url: str | None) -> str:
 def _to_sync_pg(url: str | None) -> str:
     """Strip async drivers from URL for sync psycopg2 usage."""
     if url is None:
-        raise ValueError("SUPABASE_DB_URL is not set.")
+        message = "SUPABASE_DB_URL is not set."
+        raise ValueError(message)
     url = _strip_query_params(url)
     if "postgresql+asyncpg" in url:
         return url.replace("postgresql+asyncpg", "postgresql")

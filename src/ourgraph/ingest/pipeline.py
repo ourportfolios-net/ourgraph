@@ -1,5 +1,4 @@
-"""
-Main ETL pipeline.
+"""Main ETL pipeline.
 
 Orchestrates the full flow:
   1. Discover symbols (from Supabase ORM or vnstock)
@@ -24,14 +23,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import polars as pl
 
-from ourgraph.config import AppSettings
 from ourgraph.graph.builder import GraphBuilder
 from ourgraph.ingest.supabase_fetcher import SupabaseFetcher
 from ourgraph.ingest.vnstock_fetcher import VnstockFetcher
+
+if TYPE_CHECKING:
+    from ourgraph.config import AppSettings
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +51,12 @@ class Pipeline:
     # ------------------------------------------------------------------
 
     async def run_full(self, symbols: list[str] | None = None) -> None:
-        """
-        Run the full pipeline for all symbols (or a provided subset).
+        """Run the full pipeline for all symbols (or a provided subset).
 
         Args:
             symbols: Optional list of tickers to process.
                      Defaults to all symbols resolved from Supabase or vnstock.
+
         """
         if symbols is None:
             symbols = await self._resolve_symbols()
@@ -69,12 +71,12 @@ class Pipeline:
         logger.info("Pipeline complete")
 
     async def run_daily_update(self) -> None:
-        """
-        Lightweight daily update — refreshes only prices and indicators.
+        """Lightweight daily update — refreshes only prices and indicators.
+
         Does not re-fetch static company data (subsidiaries, officers, etc.)
         """
         symbols = await self._resolve_symbols()
-        today = date.today().isoformat()
+        today = datetime.now(UTC).date().isoformat()
 
         logger.info("Daily update for %d symbols on %s", len(symbols), today)
 
@@ -84,8 +86,8 @@ class Pipeline:
                 for sym in batch:
                     try:
                         await self._update_symbol_price(builder, sym, today)
-                    except Exception as exc:
-                        logger.error("Symbol %s daily update failed: %s", sym, exc)
+                    except Exception:
+                        logger.exception("Symbol %s daily update failed", sym)
                     await asyncio.sleep(self._settings.pipeline.batch_delay)
 
         logger.info("Daily update complete")
@@ -95,8 +97,7 @@ class Pipeline:
     # ------------------------------------------------------------------
 
     async def _resolve_symbols(self) -> list[str]:
-        """
-        Resolve the list of symbols to process.
+        """Resolve the list of symbols to process.
 
         Priority:
           1. Supabase tickers.overview_df (your existing, curated list)
@@ -125,7 +126,9 @@ class Pipeline:
     # ------------------------------------------------------------------
 
     async def _ingest_companies(
-        self, builder: GraphBuilder, symbols: list[str]
+        self,
+        builder: GraphBuilder,
+        symbols: list[str],
     ) -> None:
         """Upsert all Company and Industry nodes from Supabase overview."""
         df_overview = await self._supabase.get_company_overview_async()
@@ -152,7 +155,9 @@ class Pipeline:
     # ------------------------------------------------------------------
 
     async def _ingest_per_symbol(
-        self, builder: GraphBuilder, symbols: list[str]
+        self,
+        builder: GraphBuilder,
+        symbols: list[str],
     ) -> None:
         total_batches = (
             len(symbols) + self._settings.pipeline.batch_size - 1
@@ -165,73 +170,20 @@ class Pipeline:
             for sym in batch:
                 try:
                     await self._ingest_symbol(builder, sym)
-                except Exception as exc:
-                    logger.error("Symbol %s failed: %s", sym, exc)
+                except Exception:
+                    logger.exception("Symbol %s failed", sym)
                 # Global rate-limit delay per symbol
                 await asyncio.sleep(self._settings.pipeline.batch_delay)
 
     async def _ingest_symbol(self, builder: GraphBuilder, symbol: str) -> None:
         """Ingest all data for a single symbol."""
         logger.info("Ingesting symbol: %s...", symbol)
-        prices_count = 0
-        statements_count = 0
-        indicators_count = 0
-        officers_count = 0
-        subsidiaries_count = 0
-        shareholders_count = 0
-
-        # --- Price history (Supabase cache preferred) ---
-        df_prices = await self._supabase.get_price_history_async(symbol)
-        if df_prices.is_empty():
-            df_prices = self._vnstock.get_price_history(symbol)
-        if not df_prices.is_empty():
-            df_prices = self._normalise_price_df(df_prices, symbol)
-            await builder.upsert_stock_prices(df_prices)
-            prices_count = len(df_prices)
-
-        # --- Financial statements (Neon DB preferred) ---
-        for stmt in ("balance_sheet", "income_statement", "cash_flow"):
-            df = await self._supabase.get_financial_statement_async(
-                stmt, symbol, "quarter"
-            )
-            if df.is_empty():
-                df = self._vnstock._get_financial(symbol, stmt, "quarter")
-            if not df.is_empty():
-                await builder.upsert_financial_statement(df, symbol, stmt, "quarter")
-                statements_count += len(df)
-
-        # --- Financial ratios (Supabase preferred) ---
-        df_ratios = await self._supabase.get_ratio_quarterly_async(symbol)
-        if not df_ratios.is_empty():
-            await builder.upsert_financial_indicators(df_ratios, symbol)
-            indicators_count = len(df_ratios)
-        else:
-            df_ratios = self._vnstock.get_financial_ratios(symbol, "quarter")
-            if not df_ratios.is_empty():
-                await builder.upsert_financial_indicators(df_ratios, symbol)
-                indicators_count = len(df_ratios)
-
-        # --- Officers (Supabase preferred) ---
-        df_officers = await self._supabase.get_officers_async(symbol)
-        if df_officers.is_empty():
-            df_officers = self._vnstock.get_officers(symbol)
-        if not df_officers.is_empty():
-            await builder.upsert_officers(df_officers, symbol)
-            officers_count = len(df_officers)
-
-        # --- Subsidiaries (vnstock only — always fresh) ---
-        df_subs = self._vnstock.get_subsidiaries(symbol)
-        if not df_subs.is_empty():
-            await builder.upsert_subsidiaries(df_subs, symbol)
-            subsidiaries_count = len(df_subs)
-
-        # --- Shareholders (Supabase preferred) ---
-        df_holders = await self._supabase.get_shareholders_async(symbol)
-        if df_holders.is_empty():
-            df_holders = self._vnstock.get_shareholders(symbol)
-        if not df_holders.is_empty():
-            await builder.upsert_shareholders(df_holders, symbol)
-            shareholders_count = len(df_holders)
+        prices_count = await self._ingest_symbol_prices(builder, symbol)
+        statements_count = await self._ingest_symbol_statements(builder, symbol)
+        indicators_count = await self._ingest_symbol_indicators(builder, symbol)
+        officers_count = await self._ingest_symbol_officers(builder, symbol)
+        subsidiaries_count = await self._ingest_symbol_subsidiaries(builder, symbol)
+        shareholders_count = await self._ingest_symbol_shareholders(builder, symbol)
 
         logger.info(
             "Finished %s: prices=%d, statements=%d, ratios=%d, officers=%d, subsidiaries=%d, shareholders=%d",
@@ -244,8 +196,87 @@ class Pipeline:
             shareholders_count,
         )
 
+    async def _ingest_symbol_prices(self, builder: GraphBuilder, symbol: str) -> int:
+        df_prices = await self._supabase.get_price_history_async(symbol)
+        if df_prices.is_empty():
+            df_prices = self._vnstock.get_price_history(symbol)
+        if df_prices.is_empty():
+            return 0
+
+        df_prices = self._normalise_price_df(df_prices, symbol)
+        await builder.upsert_stock_prices(df_prices)
+        return len(df_prices)
+
+    async def _ingest_symbol_statements(
+        self, builder: GraphBuilder, symbol: str,
+    ) -> int:
+        statements_count = 0
+        statement_fetchers = {
+            "balance_sheet": self._vnstock.get_balance_sheet,
+            "income_statement": self._vnstock.get_income_statement,
+            "cash_flow": self._vnstock.get_cash_flow,
+        }
+        for stmt in ("balance_sheet", "income_statement", "cash_flow"):
+            df = await self._supabase.get_financial_statement_async(
+                stmt, symbol, "quarter",
+            )
+            if df.is_empty():
+                df = statement_fetchers[stmt](symbol, "quarter")
+            if df.is_empty():
+                continue
+            await builder.upsert_financial_statement(df, symbol, stmt, "quarter")
+            statements_count += len(df)
+        return statements_count
+
+    async def _ingest_symbol_indicators(
+        self, builder: GraphBuilder, symbol: str,
+    ) -> int:
+        df_ratios = await self._supabase.get_ratio_quarterly_async(symbol)
+        if df_ratios.is_empty():
+            df_ratios = self._vnstock.get_financial_ratios(symbol, "quarter")
+        if df_ratios.is_empty():
+            return 0
+
+        await builder.upsert_financial_indicators(df_ratios, symbol)
+        return len(df_ratios)
+
+    async def _ingest_symbol_officers(self, builder: GraphBuilder, symbol: str) -> int:
+        df_officers = await self._supabase.get_officers_async(symbol)
+        if df_officers.is_empty():
+            df_officers = self._vnstock.get_officers(symbol)
+        if df_officers.is_empty():
+            return 0
+
+        await builder.upsert_officers(df_officers, symbol)
+        return len(df_officers)
+
+    async def _ingest_symbol_subsidiaries(
+        self, builder: GraphBuilder, symbol: str,
+    ) -> int:
+        df_subs = self._vnstock.get_subsidiaries(symbol)
+        if df_subs.is_empty():
+            return 0
+
+        await builder.upsert_subsidiaries(df_subs, symbol)
+        return len(df_subs)
+
+    async def _ingest_symbol_shareholders(
+        self, builder: GraphBuilder, symbol: str,
+    ) -> int:
+        df_holders = await self._supabase.get_shareholders_async(symbol)
+        if df_holders.is_empty():
+            df_holders = self._vnstock.get_shareholders(symbol)
+        if df_holders.is_empty():
+            return 0
+
+        await builder.upsert_shareholders(df_holders, symbol)
+        return len(df_holders)
+
     async def _update_symbol_price(
-        self, builder: GraphBuilder, symbol: str, as_of: str
+        self,
+        builder: GraphBuilder,
+        symbol: str,
+        as_of: str,
     ) -> None:
         """Fetch and upsert only the latest price for a symbol."""
         df = self._vnstock.get_price_history(symbol, start=as_of, end=as_of)
@@ -260,10 +291,10 @@ class Pipeline:
 
     @staticmethod
     def _normalise_price_df(df: pl.DataFrame, symbol: str) -> pl.DataFrame:
-        """
-        Normalise price DataFrame column names to the canonical schema.
+        """Normalise price DataFrame column names to the canonical schema.
+
         vnstock may return 'time', 'tradingDate', or 'date'.
-        We always need: symbol, date, open, high, low, close, volume
+        We always need: symbol, date, open, high, low, close, volume.
         """
         rename_map: dict[str, str] = {}
         for col in df.columns:

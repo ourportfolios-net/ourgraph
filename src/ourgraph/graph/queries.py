@@ -1,5 +1,4 @@
-"""
-Graph query helpers for stock analysis.
+"""Graph query helpers for stock analysis.
 
 All queries are read-only (ro_query) and return raw result sets.
 Callers can convert to polars DataFrames as needed.
@@ -10,20 +9,24 @@ These are domain-specific queries — not generic graph traversal.
 from __future__ import annotations
 
 import contextlib
+import inspect
 import logging
+from typing import TYPE_CHECKING, Self
 
 import polars as pl
-from falkordb.asyncio import FalkorDB
 
-from ourgraph.config import FalkorDBSettings
 from ourgraph.graph.schema import NodeLabel, Prop, RelType
+
+if TYPE_CHECKING:
+    from falkordb.asyncio import FalkorDB
+
+    from ourgraph.config import FalkorDBSettings
 
 logger = logging.getLogger(__name__)
 
 
 class GraphQueries:
-    """
-    Read-only query interface for the stock knowledge graph.
+    """Read-only query interface for the stock knowledge graph.
 
     Usage::
 
@@ -72,7 +75,7 @@ class GraphQueries:
                 "symbol": [r[0] for r in rows],
                 "name": [r[1] for r in rows],
                 "market_cap": [r[2] for r in rows],
-            }
+            },
         )
 
     # ------------------------------------------------------------------
@@ -98,7 +101,7 @@ class GraphQueries:
                 "sub_name": [r[1] for r in rows],
                 "ownership_pct": [r[2] for r in rows],
                 "rel_type": [r[3] for r in rows],
-            }
+            },
         )
 
     async def get_shareholders(self, symbol: str) -> pl.DataFrame:
@@ -119,7 +122,7 @@ class GraphQueries:
                 "holder_name": [r[0] for r in rows],
                 "holder_symbol": [r[1] for r in rows],
                 "stake_pct": [r[2] for r in rows],
-            }
+            },
         )
 
     # ------------------------------------------------------------------
@@ -127,7 +130,10 @@ class GraphQueries:
     # ------------------------------------------------------------------
 
     async def get_price_history(
-        self, symbol: str, start: str | None = None, end: str | None = None
+        self,
+        symbol: str,
+        start: str | None = None,
+        end: str | None = None,
     ) -> pl.DataFrame:
         """Return OHLCV price history for a symbol, optionally date-filtered."""
         where = ""
@@ -142,7 +148,7 @@ class GraphQueries:
         rows = await self._ro(
             f"""
             MATCH (c:{NodeLabel.COMPANY} {{{Prop.SYMBOL}: $symbol}})
-                  -[:{RelType.HAS_PRICE}]->(p:{NodeLabel.STOCK_PRICE})
+                -[:{RelType.HAS_STOCK_PRICE}]->(p:{NodeLabel.STOCK_PRICE})
             WHERE 1=1{where}
             RETURN p.{Prop.DATE}   AS date,
                    p.{Prop.OPEN}   AS open,
@@ -162,7 +168,7 @@ class GraphQueries:
                 "low": [r[3] for r in rows],
                 "close": [r[4] for r in rows],
                 "volume": [r[5] for r in rows],
-            }
+            },
         )
 
     # ------------------------------------------------------------------
@@ -174,44 +180,54 @@ class GraphQueries:
         rows = await self._ro(
             f"""
             MATCH (c:{NodeLabel.COMPANY} {{{Prop.SYMBOL}: $symbol}})
-                  -[:{RelType.HAS_INDICATOR}]->(i:{NodeLabel.FINANCIAL_INDICATOR})
-            RETURN i.{Prop.METRIC}  AS metric,
-                   i.{Prop.VALUE}   AS value,
+                  -[:{RelType.HAS_INDICATOR}]->(i:{NodeLabel.INDICATOR})
+            RETURN i.{Prop.PBR}     AS pbr,
+                   i.{Prop.PER}     AS per,
+                   i.{Prop.EPS}     AS eps,
                    i.{Prop.YEAR}    AS year,
-                   i.{Prop.QUARTER} AS quarter
+                   i.{Prop.QUARTER} AS quarter,
+                   i.{Prop.PAYLOAD} AS payload
             ORDER BY year DESC, quarter DESC
             """,
             {"symbol": symbol},
         )
         return pl.DataFrame(
             {
-                "metric": [r[0] for r in rows],
-                "value": [r[1] for r in rows],
-                "year": [r[2] for r in rows],
-                "quarter": [r[3] for r in rows],
-            }
+                "pbr": [r[0] for r in rows],
+                "per": [r[1] for r in rows],
+                "eps": [r[2] for r in rows],
+                "year": [r[3] for r in rows],
+                "quarter": [r[4] for r in rows],
+                "payload": [r[5] for r in rows],
+            },
         )
 
     async def get_graph_stats(self) -> dict[str, int]:
         """Return high-level graph counts used to validate ingestion progress."""
         company_count_rows = await self._ro(
-            f"MATCH (c:{NodeLabel.COMPANY}) RETURN COUNT(c)"
+            f"MATCH (c:{NodeLabel.COMPANY}) RETURN COUNT(c)",
+        )
+        distinct_symbols_rows = await self._ro(
+            f"MATCH (c:{NodeLabel.COMPANY})-[:{RelType.HAS_STOCK_PRICE}]->(:{NodeLabel.STOCK_PRICE}) RETURN COUNT(DISTINCT c.{Prop.SYMBOL})",
         )
         price_count_rows = await self._ro(
-            f"MATCH (p:{NodeLabel.STOCK_PRICE}) RETURN COUNT(p)"
+            f"MATCH (p:{NodeLabel.STOCK_PRICE}) RETURN COUNT(p)",
         )
         distinct_price_symbol_rows = await self._ro(
-            f"MATCH (p:{NodeLabel.STOCK_PRICE}) RETURN COUNT(DISTINCT p.{Prop.SYMBOL})"
+            f"MATCH (p:{NodeLabel.STOCK_PRICE}) RETURN COUNT(DISTINCT p.{Prop.SYMBOL})",
         )
         statement_count_rows = await self._ro(
-            f"MATCH (s:{NodeLabel.FINANCIAL_STATEMENT}) RETURN COUNT(s)"
+            f"MATCH (s:{NodeLabel.FINANCIAL_STATEMENT}) RETURN COUNT(s)",
         )
         indicator_count_rows = await self._ro(
-            f"MATCH (i:{NodeLabel.FINANCIAL_INDICATOR}) RETURN COUNT(i)"
+            f"MATCH (i:{NodeLabel.INDICATOR}) RETURN COUNT(i)",
         )
 
         return {
             "companies": int(company_count_rows[0][0]) if company_count_rows else 0,
+            "distinct_symbols": int(distinct_symbols_rows[0][0])
+            if distinct_symbols_rows
+            else 0,
             "stock_prices": int(price_count_rows[0][0]) if price_count_rows else 0,
             "stock_price_symbols": int(distinct_price_symbol_rows[0][0])
             if distinct_price_symbol_rows
@@ -229,8 +245,8 @@ class GraphQueries:
     # ------------------------------------------------------------------
 
     async def find_cross_shareholding(self, limit: int = 50) -> pl.DataFrame:
-        """
-        Find companies that mutually hold stakes in each other.
+        """Find companies that mutually hold stakes in each other.
+
         Returns pairs (A → B) where B also holds a stake in A.
         """
         rows = await self._ro(
@@ -251,19 +267,25 @@ class GraphQueries:
                 "symbol_b": [r[1] for r in rows],
                 "a_holds_b_pct": [r[2] for r in rows],
                 "b_holds_a_pct": [r[3] for r in rows],
-            }
+            },
         )
 
     # ------------------------------------------------------------------
     # Context manager
     # ------------------------------------------------------------------
 
-    async def __aenter__(self) -> GraphQueries:
+    async def __aenter__(self) -> Self:
+        """Return this instance for async context-manager usage."""
         return self
 
     async def __aexit__(self, *_: object) -> None:
+        """Close the underlying client when exiting async context manager."""
         await self.close()
 
     async def close(self) -> None:
         with contextlib.suppress(Exception):
-            await self._client.close()
+            close = getattr(self._client, "close", None)
+            if callable(close):
+                maybe_awaitable = close()
+                if inspect.isawaitable(maybe_awaitable):
+                    await maybe_awaitable

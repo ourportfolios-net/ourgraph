@@ -1,5 +1,4 @@
-"""
-CLI entry point.
+"""CLI entry point.
 
 All commands load config from environment / .env.
 Nothing is hardcoded — flags only override defaults.
@@ -20,13 +19,18 @@ Commands:
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
+if TYPE_CHECKING:
+    from ourgraph.config import AppSettings
+
 app = typer.Typer(
-    help="Vietnamese stock market knowledge graph CLI", no_args_is_help=True
+    help="Vietnamese stock market knowledge graph CLI",
+    no_args_is_help=True,
 )
 ingest_app = typer.Typer(help="Data ingestion commands")
 graph_app = typer.Typer(help="Graph query commands")
@@ -34,9 +38,15 @@ app.add_typer(ingest_app, name="ingest")
 app.add_typer(graph_app, name="graph")
 
 console = Console()
+INGEST_SYMBOLS_ARG = typer.Argument(
+    None,
+    help="Optional list of symbols. Defaults to all.",
+)
+CLEAR_DEFAULT_CONFIRM = False
+MASK_PREFIX_LENGTH = 4
 
 
-def _settings():
+def _settings() -> AppSettings:
     from ourgraph.config import get_settings
 
     return get_settings()
@@ -49,14 +59,13 @@ def _settings():
 
 @app.command()
 def setup() -> None:
-    """
-    First-time setup: create graph indices and initialise Graphiti.
+    """First-time setup: create graph indices and initialise Graphiti.
 
     Run this once after starting FalkorDB for the first time.
     """
     settings = _settings()
 
-    async def _run():
+    async def _run() -> object:
         from ourgraph.graph.builder import GraphBuilder
         from ourgraph.graphiti_layer.client import build_graphiti_client
 
@@ -70,6 +79,7 @@ def setup() -> None:
         await client.build_indices_and_constraints()
         await client.close()
         console.print("[green]✓ Graphiti indices created[/green]")
+        return None
 
     asyncio.run(_run())
 
@@ -80,11 +90,7 @@ def setup() -> None:
 
 
 @ingest_app.command("full")
-def ingest_full(
-    symbols: list[str] = typer.Argument(
-        None, help="Optional list of symbols. Defaults to all."
-    ),
-) -> None:
+def ingest_full(symbols: list[str] = INGEST_SYMBOLS_ARG) -> None:
     """Run the full pipeline (all symbols, all data)."""
     settings = _settings()
     from ourgraph.ingest.pipeline import Pipeline
@@ -108,9 +114,7 @@ def ingest_daily() -> None:
 
 
 @ingest_app.command("symbol")
-def ingest_symbol(
-    symbol: str = typer.Argument(..., help="Ticker symbol, e.g. VCB"),
-) -> None:
+def ingest_symbol(symbol: str = typer.Argument(..., help="Ticker symbol, e.g. VCB")) -> None:
     """Ingest all data for a single symbol."""
     settings = _settings()
     from ourgraph.ingest.pipeline import Pipeline
@@ -133,7 +137,7 @@ def schedule() -> None:
     from ourgraph.ingest.scheduler import run_scheduler
 
     console.print(
-        f"[bold]Starting scheduler[/bold] — cron: [cyan]{settings.scheduler.cron}[/cyan]"
+        f"[bold]Starting scheduler[/bold] — cron: [cyan]{settings.scheduler.cron}[/cyan]",
     )
     run_scheduler(settings)
 
@@ -152,7 +156,7 @@ def query(
     settings = _settings()
     from ourgraph.graphiti_layer.search import GraphRAGSearch
 
-    async def _run():
+    async def _run() -> object:
         search = await GraphRAGSearch.create(settings)
         results = await search.query(question, num_results=num_results)
         await search.close()
@@ -170,11 +174,11 @@ def query(
     table.add_column("Valid At", style="cyan", width=12)
     table.add_column("Invalid At", style="red", width=12)
 
-    for r in results:
+    for row in results:
         table.add_row(
-            r.get("fact", ""),
-            r.get("valid_at") or "—",
-            r.get("invalid_at") or "—",
+            row.get("fact", ""),
+            row.get("valid_at") or "—",
+            row.get("invalid_at") or "—",
         )
     console.print(table)
 
@@ -193,9 +197,9 @@ def graph_peers(
     settings = _settings()
     from ourgraph.graph.queries import GraphQueries
 
-    async def _run():
-        async with GraphQueries.from_settings(settings.falkordb) as q:
-            return await q.get_sector_peers(symbol, limit=limit)
+    async def _run() -> object:
+        async with GraphQueries.from_settings(settings.falkordb) as queries:
+            return await queries.get_sector_peers(symbol, limit=limit)
 
     df = asyncio.run(_run())
     if df.is_empty():
@@ -205,16 +209,14 @@ def graph_peers(
 
 
 @graph_app.command("subs")
-def graph_subs(
-    symbol: str = typer.Argument(..., help="Ticker symbol"),
-) -> None:
+def graph_subs(symbol: str = typer.Argument(..., help="Ticker symbol")) -> None:
     """List direct subsidiaries of a company."""
     settings = _settings()
     from ourgraph.graph.queries import GraphQueries
 
-    async def _run():
-        async with GraphQueries.from_settings(settings.falkordb) as q:
-            return await q.get_subsidiaries(symbol)
+    async def _run() -> object:
+        async with GraphQueries.from_settings(settings.falkordb) as queries:
+            return await queries.get_subsidiaries(symbol)
 
     df = asyncio.run(_run())
     if df.is_empty():
@@ -224,16 +226,14 @@ def graph_subs(
 
 
 @graph_app.command("shareholders")
-def graph_shareholders(
-    symbol: str = typer.Argument(..., help="Ticker symbol"),
-) -> None:
+def graph_shareholders(symbol: str = typer.Argument(..., help="Ticker symbol")) -> None:
     """List major shareholders of a company."""
     settings = _settings()
     from ourgraph.graph.queries import GraphQueries
 
-    async def _run():
-        async with GraphQueries.from_settings(settings.falkordb) as q:
-            return await q.get_shareholders(symbol)
+    async def _run() -> object:
+        async with GraphQueries.from_settings(settings.falkordb) as queries:
+            return await queries.get_shareholders(symbol)
 
     df = asyncio.run(_run())
     if df.is_empty():
@@ -252,9 +252,9 @@ def graph_prices(
     settings = _settings()
     from ourgraph.graph.queries import GraphQueries
 
-    async def _run():
-        async with GraphQueries.from_settings(settings.falkordb) as q:
-            return await q.get_price_history(symbol, start=start, end=end)
+    async def _run() -> object:
+        async with GraphQueries.from_settings(settings.falkordb) as queries:
+            return await queries.get_price_history(symbol, start=start, end=end)
 
     df = asyncio.run(_run())
     if df.is_empty():
@@ -271,9 +271,9 @@ def graph_cross_shareholding(
     settings = _settings()
     from ourgraph.graph.queries import GraphQueries
 
-    async def _run():
-        async with GraphQueries.from_settings(settings.falkordb) as q:
-            return await q.find_cross_shareholding(limit=limit)
+    async def _run() -> object:
+        async with GraphQueries.from_settings(settings.falkordb) as queries:
+            return await queries.find_cross_shareholding(limit=limit)
 
     df = asyncio.run(_run())
     if df.is_empty():
@@ -288,22 +288,88 @@ def graph_stats() -> None:
     settings = _settings()
     from ourgraph.graph.queries import GraphQueries
 
-    async def _run():
-        async with GraphQueries.from_settings(settings.falkordb) as q:
-            return await q.get_graph_stats()
+    async def _run() -> object:
+        async with GraphQueries.from_settings(settings.falkordb) as queries:
+            return await queries.get_graph_stats()
 
     stats = asyncio.run(_run())
 
     table = Table(title="Graph Stats", show_lines=True)
     table.add_column("Metric", style="cyan")
     table.add_column("Count", style="white", justify="right")
-    table.add_row("Company nodes", str(stats.get("companies", 0)))
+    table.add_row("Distinct trading tickers", str(stats.get("distinct_symbols", 0)))
+    table.add_row("All company entities", str(stats.get("companies", 0)))
     table.add_row("StockPrice nodes", str(stats.get("stock_prices", 0)))
     table.add_row(
-        "Distinct symbols with prices", str(stats.get("stock_price_symbols", 0))
+        "Distinct symbols with prices",
+        str(stats.get("stock_price_symbols", 0)),
     )
     table.add_row("FinancialStatement nodes", str(stats.get("financial_statements", 0)))
     table.add_row("FinancialIndicator nodes", str(stats.get("financial_indicators", 0)))
+    console.print(table)
+
+
+@graph_app.command("dedupe")
+def graph_dedupe() -> None:
+    """Remove duplicate nodes by natural keys and rewire relationships."""
+    settings = _settings()
+    from ourgraph.graph.builder import GraphBuilder
+
+    async def _run() -> object:
+        async with GraphBuilder.from_settings(settings.falkordb) as builder:
+            return await builder.deduplicate_nodes()
+
+    with console.status("[bold green]Deduplicating graph nodes...[/bold green]"):
+        stats = asyncio.run(_run())
+
+    table = Table(title="Deduplication Result", show_lines=True)
+    table.add_column("Node Type", style="cyan")
+    table.add_column("Removed", style="white", justify="right")
+    table.add_row("Company", str(stats.get("company", 0)))
+    table.add_row("StockPrice", str(stats.get("stock_price", 0)))
+    table.add_row("Indicator", str(stats.get("indicator", 0)))
+    table.add_row("FinancialStatement", str(stats.get("financial_statement", 0)))
+    table.add_row("Date", str(stats.get("date", 0)))
+    table.add_row("Quarter", str(stats.get("quarter", 0)))
+    table.add_row("Year", str(stats.get("year", 0)))
+    table.add_row("Sector", str(stats.get("sector", 0)))
+    table.add_row("Industry", str(stats.get("industry", 0)))
+    console.print(table)
+
+
+@graph_app.command("clear")
+def graph_clear(
+    *,
+    yes: bool = typer.Option(
+        CLEAR_DEFAULT_CONFIRM,
+        "--yes",
+        "-y",
+        help="Confirm destructive operation: delete all graph data.",
+    ),
+) -> None:
+    """Delete all nodes and relationships in the current graph."""
+    if not yes:
+        console.print(
+            "[red]Refusing to clear graph without confirmation.[/red] "
+            "Re-run with [bold]--yes[/bold].",
+        )
+        raise typer.Exit(code=1)
+
+    settings = _settings()
+    from ourgraph.graph.builder import GraphBuilder
+
+    async def _run() -> object:
+        async with GraphBuilder.from_settings(settings.falkordb) as builder:
+            return await builder.clear_graph()
+
+    with console.status("[bold red]Clearing graph data...[/bold red]"):
+        result = asyncio.run(_run())
+
+    table = Table(title="Graph Clear Result", show_lines=True)
+    table.add_column("Metric", style="cyan")
+    table.add_column("Count", style="white", justify="right")
+    table.add_row("Deleted nodes", str(result.get("deleted_nodes", 0)))
+    table.add_row("Deleted relationships", str(result.get("deleted_relationships", 0)))
     console.print(table)
 
 
@@ -322,7 +388,11 @@ def info() -> None:
     table.add_column("Value", style="white")
 
     def _mask(v: str) -> str:
-        return v[:4] + "****" if len(v) > 4 else "****"
+        return (
+            v[:MASK_PREFIX_LENGTH] + "****"
+            if len(v) > MASK_PREFIX_LENGTH
+            else "****"
+        )
 
     rows = [
         ("FalkorDB host", settings.falkordb.host),
@@ -343,8 +413,8 @@ def info() -> None:
         ("Log level", settings.log_level),
         (
             "Supabase DB URL",
-            _mask(settings.supabase.db_url)
-            if settings.supabase.db_url
+            _mask(settings.supabase.supabase_db_url)
+            if settings.supabase.supabase_db_url
             else "(not set)",
         ),
     ]

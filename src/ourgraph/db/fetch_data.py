@@ -1,5 +1,4 @@
-"""
-Database query functions — all return polars DataFrames.
+"""Database query functions — all return polars DataFrames.
 
 Uses SQLAlchemy ORM selects (not raw text SQL).
 Async variants are provided for pipeline use; sync variants for CLI / one-off use.
@@ -11,7 +10,6 @@ from __future__ import annotations
 
 import decimal
 import logging
-from datetime import date
 
 import polars as pl
 from sqlalchemy import select, text
@@ -75,15 +73,14 @@ _STATEMENT_QUERIES = {
 }
 
 
-def _clean_val(v):
+def _clean_val(v: object) -> object:
     if isinstance(v, decimal.Decimal):
         return float(v) if v is not None else None
     return v
 
 
-def _orm_to_polars(rows: list, model_class) -> pl.DataFrame:
-    """
-    Convert a list of ORM instances to a polars DataFrame.
+def _orm_to_polars(rows: list[object], model_class: object) -> pl.DataFrame:
+    """Convert a list of ORM instances to a polars DataFrame.
 
     Extracts only mapped column names — skips SQLAlchemy internal attributes.
     """
@@ -122,7 +119,7 @@ def fetch_overview_all() -> pl.DataFrame:
                 {
                     col: [_clean_val(row[i]) for row in rows]
                     for i, col in enumerate(col_names)
-                }
+                },
             )
     except SQLAlchemyError as exc:
         logger.warning("fetch_overview_all failed: %s", exc)
@@ -131,13 +128,13 @@ def fetch_overview_all() -> pl.DataFrame:
 
 def fetch_price_history_sync(
     symbol: str,
-    start: date | None = None,
-    end: date | None = None,
+    start: object | None = None,
+    end: object | None = None,
 ) -> pl.DataFrame:
     """Return OHLCV rows from tickers.price_history for one symbol."""
     try:
         stmt = select(*PriceHistoryORM.__table__.columns).where(
-            PriceHistoryORM.symbol == symbol
+            PriceHistoryORM.symbol == symbol,
         )
         if start:
             stmt = stmt.where(PriceHistoryORM.date >= start)
@@ -153,7 +150,7 @@ def fetch_price_history_sync(
                 {
                     col: [_clean_val(row[i]) for row in rows]
                     for i, col in enumerate(col_names)
-                }
+                },
             )
     except SQLAlchemyError as exc:
         logger.warning("fetch_price_history_sync(%s) failed: %s", symbol, exc)
@@ -176,7 +173,7 @@ def fetch_ratio_quarterly_sync(symbol: str) -> pl.DataFrame:
                 {
                     col: [_clean_val(row[i]) for row in rows]
                     for i, col in enumerate(col_names)
-                }
+                },
             )
     except SQLAlchemyError as exc:
         logger.warning("fetch_ratio_quarterly_sync(%s) failed: %s", symbol, exc)
@@ -187,7 +184,7 @@ def fetch_officers_sync(symbol: str) -> pl.DataFrame:
     """Return tickers.officers_df rows for one symbol."""
     try:
         stmt = select(*OfficersORM.__table__.columns).where(
-            OfficersORM.symbol == symbol
+            OfficersORM.symbol == symbol,
         )
         with sync_engine.connect() as conn:
             result = conn.execute(stmt)
@@ -197,7 +194,7 @@ def fetch_officers_sync(symbol: str) -> pl.DataFrame:
                 {
                     col: [_clean_val(row[i]) for row in rows]
                     for i, col in enumerate(col_names)
-                }
+                },
             )
     except SQLAlchemyError as exc:
         logger.warning("fetch_officers_sync(%s) failed: %s", symbol, exc)
@@ -208,7 +205,7 @@ def fetch_shareholders_sync(symbol: str) -> pl.DataFrame:
     """Return tickers.shareholders_df rows for one symbol."""
     try:
         stmt = select(*ShareholdersORM.__table__.columns).where(
-            ShareholdersORM.symbol == symbol
+            ShareholdersORM.symbol == symbol,
         )
         with sync_engine.connect() as conn:
             result = conn.execute(stmt)
@@ -218,7 +215,7 @@ def fetch_shareholders_sync(symbol: str) -> pl.DataFrame:
                 {
                     col: [_clean_val(row[i]) for row in rows]
                     for i, col in enumerate(col_names)
-                }
+                },
             )
     except SQLAlchemyError as exc:
         logger.warning("fetch_shareholders_sync(%s) failed: %s", symbol, exc)
@@ -239,7 +236,7 @@ def fetch_stats_sync(symbol: str | None = None) -> pl.DataFrame:
                 {
                     col: [_clean_val(row[i]) for row in rows]
                     for i, col in enumerate(col_names)
-                }
+                },
             )
     except SQLAlchemyError as exc:
         logger.warning("fetch_stats_sync(%s) failed: %s", symbol, exc)
@@ -273,7 +270,7 @@ async def fetch_overview_async() -> pl.DataFrame:
                 {
                     col: [_clean_val(row[i]) for row in rows]
                     for i, col in enumerate(col_names)
-                }
+                },
             )
     except SQLAlchemyError as exc:
         logger.warning("fetch_overview_async failed: %s", exc)
@@ -282,13 +279,13 @@ async def fetch_overview_async() -> pl.DataFrame:
 
 async def fetch_price_history_async(
     symbol: str,
-    start: date | None = None,
-    end: date | None = None,
+    start: object | None = None,
+    end: object | None = None,
 ) -> pl.DataFrame:
     """Return OHLCV rows from tickers.price_history (async)."""
     try:
         stmt = select(*PriceHistoryORM.__table__.columns).where(
-            PriceHistoryORM.symbol == symbol
+            PriceHistoryORM.symbol == symbol,
         )
         if start:
             stmt = stmt.where(PriceHistoryORM.date >= start)
@@ -304,7 +301,7 @@ async def fetch_price_history_async(
                 {
                     col: [_clean_val(row[i]) for row in rows]
                     for i, col in enumerate(col_names)
-                }
+                },
             )
     except SQLAlchemyError as exc:
         logger.warning("fetch_price_history_async(%s) failed: %s", symbol, exc)
@@ -327,7 +324,7 @@ async def fetch_ratio_quarterly_async(symbol: str) -> pl.DataFrame:
                 {
                     col: [_clean_val(row[i]) for row in rows]
                     for i, col in enumerate(col_names)
-                }
+                },
             )
     except SQLAlchemyError as exc:
         logger.warning("fetch_ratio_quarterly_async(%s) failed: %s", symbol, exc)
@@ -338,7 +335,7 @@ async def fetch_officers_async(symbol: str) -> pl.DataFrame:
     """Return tickers.officers_df rows (async)."""
     try:
         stmt = select(*OfficersORM.__table__.columns).where(
-            OfficersORM.symbol == symbol
+            OfficersORM.symbol == symbol,
         )
         async with get_session() as session:
             result = await session.execute(stmt)
@@ -348,7 +345,7 @@ async def fetch_officers_async(symbol: str) -> pl.DataFrame:
                 {
                     col: [_clean_val(row[i]) for row in rows]
                     for i, col in enumerate(col_names)
-                }
+                },
             )
     except SQLAlchemyError as exc:
         logger.warning("fetch_officers_async(%s) failed: %s", symbol, exc)
@@ -356,7 +353,9 @@ async def fetch_officers_async(symbol: str) -> pl.DataFrame:
 
 
 async def fetch_financial_statement_async(
-    statement_name: str, symbol: str, period: str
+    statement_name: str,
+    symbol: str,
+    period: str,
 ) -> pl.DataFrame:
     """Return financial statement from Neon, pivoted on year/quarter (async)."""
     query = _STATEMENT_QUERIES.get(statement_name, {}).get(period)
@@ -378,15 +377,18 @@ async def fetch_financial_statement_async(
                 {
                     col: [_clean_val(row[i]) for row in rows]
                     for i, col in enumerate(col_names)
-                }
+                },
             )
             if period == "quarter":
                 df = df.pivot(
-                    index=["year", "quarter"], on="metric", values="value"
+                    index=["year", "quarter"],
+                    on="metric",
+                    values="value",
                 ).sort(["year", "quarter"], descending=True)
             else:
                 df = df.pivot(index=["year"], on="metric", values="value").sort(
-                    ["year"], descending=True
+                    ["year"],
+                    descending=True,
                 )
             return df
     except SQLAlchemyError as exc:
@@ -398,7 +400,7 @@ async def fetch_shareholders_async(symbol: str) -> pl.DataFrame:
     """Return tickers.shareholders_df rows (async)."""
     try:
         stmt = select(*ShareholdersORM.__table__.columns).where(
-            ShareholdersORM.symbol == symbol
+            ShareholdersORM.symbol == symbol,
         )
         async with get_session() as session:
             result = await session.execute(stmt)
@@ -408,7 +410,7 @@ async def fetch_shareholders_async(symbol: str) -> pl.DataFrame:
                 {
                     col: [_clean_val(row[i]) for row in rows]
                     for i, col in enumerate(col_names)
-                }
+                },
             )
     except SQLAlchemyError as exc:
         logger.warning("fetch_shareholders_async(%s) failed: %s", symbol, exc)
@@ -429,7 +431,7 @@ async def fetch_stats_async(symbol: str | None = None) -> pl.DataFrame:
                 {
                     col: [_clean_val(row[i]) for row in rows]
                     for i, col in enumerate(col_names)
-                }
+                },
             )
     except SQLAlchemyError as exc:
         logger.warning("fetch_stats_async(%s) failed: %s", symbol, exc)

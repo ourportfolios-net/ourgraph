@@ -1,5 +1,4 @@
-"""
-Central configuration via pydantic-settings.
+"""Central configuration via pydantic-settings.
 
 All values come from environment variables / .env file.
 Nothing is hardcoded here — only defaults that are safe to change.
@@ -16,7 +15,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class FalkorDBSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="FALKORDB_", env_file=".env", extra="ignore"
+        env_prefix="FALKORDB_", env_file=".env", extra="ignore",
     )
 
     host: str = Field(default="localhost")
@@ -28,7 +27,7 @@ class FalkorDBSettings(BaseSettings):
 
 class OllamaSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="OLLAMA_", env_file=".env", extra="ignore"
+        env_prefix="OLLAMA_", env_file=".env", extra="ignore",
     )
 
     base_url: str = Field(default="http://localhost:11434/v1")
@@ -47,7 +46,7 @@ class DatabaseSettings(BaseSettings):
 
 class VnstockSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="VNSTOCK_", env_file=".env", extra="ignore"
+        env_prefix="VNSTOCK_", env_file=".env", extra="ignore",
     )
 
     source: str = Field(default="KBS")
@@ -56,7 +55,7 @@ class VnstockSettings(BaseSettings):
 
 class PipelineSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="PIPELINE_", env_file=".env", extra="ignore"
+        env_prefix="PIPELINE_", env_file=".env", extra="ignore",
     )
 
     batch_size: int = Field(default=5)
@@ -66,7 +65,7 @@ class PipelineSettings(BaseSettings):
 
 class SchedulerSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="SCHEDULER_", env_file=".env", extra="ignore"
+        env_prefix="SCHEDULER_", env_file=".env", extra="ignore",
     )
 
     cron: str = Field(default="0 7 * * 1-5")
@@ -74,7 +73,7 @@ class SchedulerSettings(BaseSettings):
 
 class GraphitiSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="GRAPHITI_", env_file=".env", extra="ignore"
+        env_prefix="GRAPHITI_", env_file=".env", extra="ignore",
     )
 
     semaphore_limit: int = Field(default=2)
@@ -99,6 +98,6 @@ def get_settings() -> AppSettings:
     """Return the singleton settings object (cached after first call)."""
     settings = AppSettings()
     logging.basicConfig(
-        level=getattr(logging, settings.log_level.upper(), logging.INFO)
+        level=getattr(logging, settings.log_level.upper(), logging.INFO),
     )
     return settings

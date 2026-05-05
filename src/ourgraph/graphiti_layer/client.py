@@ -1,5 +1,4 @@
-"""
-Graphiti temporal knowledge graph client.
+"""Graphiti temporal knowledge graph client.
 
 Graphiti sits on top of FalkorDB and adds:
   - Temporal fact management (validity windows)
@@ -20,12 +19,15 @@ different graph names to avoid schema conflicts.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from graphiti_core import Graphiti
 from graphiti_core.driver.falkordb_driver import FalkorDriver
 
-from ourgraph.config import AppSettings
 from ourgraph.llm.factory import build_embedder, build_llm_client, build_reranker
+
+if TYPE_CHECKING:
+    from ourgraph.config import AppSettings
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +36,7 @@ GRAPHITI_GRAPH_SUFFIX = "_graphiti"
 
 
 def build_graphiti_client(settings: AppSettings) -> Graphiti:
-    """
-    Build and return a configured Graphiti instance.
+    """Build and return a configured Graphiti instance.
 
     The Graphiti graph is named <graph_name>_graphiti to keep it
     separate from the raw structured KG built by GraphBuilder.
@@ -47,6 +48,7 @@ def build_graphiti_client(settings: AppSettings) -> Graphiti:
 
     Returns:
         A configured (but not yet initialised) Graphiti instance.
+
     """
     falkor_settings = settings.falkordb
     graphiti_graph_name = falkor_settings.graph_name + GRAPHITI_GRAPH_SUFFIX
@@ -65,7 +67,7 @@ def build_graphiti_client(settings: AppSettings) -> Graphiti:
 
     llm_client = build_llm_client(settings.ollama)
     embedder = build_embedder(settings.ollama)
-    reranker = build_reranker(settings.ollama, client=llm_client)
+    reranker = build_reranker(settings.ollama)
 
     logger.info(
         "Building Graphiti client — graph: %s, llm: %s, embedder: %s",

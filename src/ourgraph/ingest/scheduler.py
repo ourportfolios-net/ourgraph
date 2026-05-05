@@ -1,5 +1,4 @@
-"""
-Daily batch scheduler.
+"""Daily batch scheduler.
 
 Uses APScheduler to trigger the pipeline on a cron schedule.
 The cron expression is fully configurable via SCHEDULER_CRON in .env.
@@ -11,26 +10,30 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from ourgraph.config import AppSettings
 from ourgraph.ingest.pipeline import Pipeline
 
+if TYPE_CHECKING:
+    from ourgraph.config import AppSettings
+
 logger = logging.getLogger(__name__)
+CRON_FIELD_COUNT = 5
 
 
 def _parse_cron(expr: str) -> CronTrigger:
-    """
-    Parse a standard 5-field cron expression into an APScheduler CronTrigger.
+    """Parse a standard 5-field cron expression into an APScheduler CronTrigger.
 
     Fields: minute hour day_of_month month day_of_week
     """
     parts = expr.strip().split()
-    if len(parts) != 5:
+    if len(parts) != CRON_FIELD_COUNT:
+        message = f"SCHEDULER_CRON must be a 5-field cron expression, got: {expr!r}"
         raise ValueError(
-            f"SCHEDULER_CRON must be a 5-field cron expression, got: {expr!r}"
+            message,
         )
     minute, hour, day, month, day_of_week = parts
     return CronTrigger(
@@ -43,8 +46,7 @@ def _parse_cron(expr: str) -> CronTrigger:
 
 
 class DailyScheduler:
-    """
-    Wraps APScheduler to run the pipeline on a cron schedule.
+    """Wraps APScheduler to run the pipeline on a cron schedule.
 
     Usage::
 
@@ -69,7 +71,8 @@ class DailyScheduler:
         )
         self._scheduler.start()
         logger.info(
-            "Scheduler started — cron: %s", self._settings.scheduler.cron
+            "Scheduler started — cron: %s",
+            self._settings.scheduler.cron,
         )
 
     def stop(self) -> None:
@@ -86,8 +89,8 @@ class DailyScheduler:
 
 
 def run_scheduler(settings: AppSettings) -> None:
-    """
-    Convenience function to start the scheduler and block.
+    """Start the scheduler and block until interruption.
+
     Call from the CLI.
     """
     loop = asyncio.new_event_loop()

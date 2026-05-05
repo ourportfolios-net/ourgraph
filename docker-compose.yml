@@ -1,0 +1,19 @@
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: ourgraph-falkordb
+    ports:
+      - "${FALKORDB_PORT:-6379}:6379"
+      - "3000:3000" # FalkorDB Browser UI
+    volumes:
+      - falkordb_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  falkordb_data:
+    driver: local

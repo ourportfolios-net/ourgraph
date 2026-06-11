@@ -19,6 +19,7 @@ from ourgraph.constants import (
     GRAPH_QUERY_SECTOR_PEERS_LIMIT,
     GRAPH_QUERY_SHARED_INSIDERS_LIMIT,
 )
+from ourgraph.graph.graph_layout import build_style_json, format_elements
 from ourgraph.graph.schema import NodeLabel, Prop, RelType
 
 if TYPE_CHECKING:
@@ -497,72 +498,83 @@ class GraphQueries:
         symbol: str | None = None,
         *,
         max_edges: int = 200,
+        page: int = 1,
+        page_size: int = 500,
         include_macro: bool = False,
     ) -> dict:
-        """Export the full graph as nodes+edges JSON for frontend visualization.
+        """Export the full graph as pre-formatted elements for frontend visualization.
 
-        Returns a dict with 'nodes' and 'edges' lists, each node/edge
-        carrying all its properties for rich display.
+        Returns a dict with:
+          - ``elements``: pre-formatted Cytoscape.js element array (with positions)
+          - ``nodes``: raw node data (for detail panel lookups)
+          - ``edges``: raw edge data
+          - ``style``: style constants for the JS renderer
+          - ``has_more``: whether more edges are available
+          - ``page`` / ``page_size``: pagination info
 
-        If symbol is provided, returns only the ego-network around that
+        If ``symbol`` is provided, returns only the ego-network around that
         symbol (1-hop neighborhood).
+
         """
+        max_edges = min(max_edges, 3000)
+        page_size = min(max(page_size, 1), max_edges)
+        skip = (page - 1) * page_size
+        effective_limit = min(page_size, max_edges - skip)
+
         if symbol:
-            return await self._export_egonet_json(symbol, max_edges=max_edges)
+            return await self._export_egonet_json(
+                symbol,
+                max_edges=effective_limit,
+                page=page,
+                page_size=page_size,
+            )
 
         exclude_labels = [NodeLabel.DATE, NodeLabel.QUARTER, NodeLabel.YEAR]
         if not include_macro:
             exclude_labels.append(NodeLabel.MACRO_INDICATOR)
 
-        # Exclude Person→Company role edges from the overview graph.
-        # Role details are visible in the node detail panel; including
-        # officer/board/executive edges crowds out the more interesting
-        # inter-company relationships (LENDS_TO, HOLDS_STAKE_IN, etc.)
-        # and sector/industry connections (BELONGS_TO).
         exclude_rels = ["IS_OFFICER", "IS_BOARD_MEMBER", "IS_EXECUTIVE", "IS_FOUNDER"]
-        rel_exclude = " AND ".join(f"type(r) <> '{r}'" for r in exclude_rels)
-
-        edge_exclude = " AND ".join(
+        rel_exclude_conditions = [f"type(r) <> '{r}'" for r in exclude_rels]
+        edge_exclude_conditions = [
             f"NOT a:{label} AND NOT b:{label}" for label in exclude_labels
-        )
+        ]
 
-        # First pass: always include BELONGS_TO edges (needed for sector
-        # grouping in the frontend concentric layout), then fill remaining
-        # edge budget with other relationship types.
-        belongs_query = f"""
-            MATCH (a)-[r:BELONGS_TO|BELONGS_TO_INDUSTRY]->(b)
-            WHERE {edge_exclude}
-            RETURN labels(a) AS source_labels, properties(a) AS source_props,
-                   type(r) AS relationship, properties(r) AS edge_props,
-                   labels(b) AS target_labels, properties(b) AS target_props
-            LIMIT 200
-        """
+        edge_exclude = " AND ".join(edge_exclude_conditions)
+        # BELONGS_TO edges always pass the rel_exclude filter
+        belongs_priority = " OR type(r) IN ['BELONGS_TO', 'BELONGS_TO_INDUSTRY']"
 
-        remaining = max_edges - 200  # reserve 200 slots for BELONGS_TO
-        other_query = f"""
+        # Single merged query with priority ordering:
+        # BELONGS_TO/INDUSTRY edges come first, then all other allowed edges.
+        merged_query = f"""
             MATCH (a)-[r]->(b)
             WHERE {edge_exclude}
-              AND {rel_exclude}
-              AND type(r) <> 'BELONGS_TO'
-              AND type(r) <> 'BELONGS_TO_INDUSTRY'
+              AND (
+                ({" AND ".join(rel_exclude_conditions)})
+                {belongs_priority}
+              )
             RETURN labels(a) AS source_labels, properties(a) AS source_props,
                    type(r) AS relationship, properties(r) AS edge_props,
                    labels(b) AS target_labels, properties(b) AS target_props
-            LIMIT $remaining
+            ORDER BY
+              CASE
+                WHEN type(r) IN ['BELONGS_TO', 'BELONGS_TO_INDUSTRY'] THEN 0
+                ELSE 1
+              END,
+              relationship,
+              source_labels,
+              target_labels
+            SKIP $skip
+            LIMIT $limit
         """
 
-        belongs_rows = await self._ro(belongs_query)
-        other_rows = (
-            await self._ro(other_query, {"remaining": max(remaining, 0)})
-            if remaining > 0
-            else []
+        rows = await self._ro(
+            merged_query,
+            {"skip": skip, "limit": effective_limit},
         )
-
-        edge_rows = list(belongs_rows) + list(other_rows)
 
         seen_nodes: dict[str, dict] = {}
         edges: list[dict] = []
-        for row in edge_rows:
+        for row in rows:
             src_labels, src_props, rel_type, edge_props, tgt_labels, tgt_props = row
             src_id = self._node_key(src_labels, src_props)
             tgt_id = self._node_key(tgt_labels, tgt_props)
@@ -587,13 +599,34 @@ class GraphQueries:
                 },
             )
 
-        return {"nodes": list(seen_nodes.values()), "edges": edges}
+        raw: dict[str, Any] = {
+            "nodes": list(seen_nodes.values()),
+            "edges": edges,
+        }
+
+        # Build pre-formatted elements with positions
+        elements = format_elements(raw)
+
+        # Count total edges (approximate for has_more)
+        has_more = (skip + effective_limit) < max_edges
+
+        return {
+            "elements": elements,
+            "nodes": list(seen_nodes.values()),
+            "edges": edges,
+            "style": build_style_json(),
+            "has_more": has_more,
+            "page": page,
+            "page_size": page_size,
+        }
 
     async def _export_egonet_json(
         self,
         symbol: str,
         *,
         max_edges: int = 200,
+        page: int = 1,
+        page_size: int = 500,
     ) -> dict:
         """Export the ego-network around a given symbol."""
         nodes_query = f"""
@@ -617,7 +650,8 @@ class GraphQueries:
 
         node_rows = await self._ro(nodes_query, {"symbol": symbol})
         edge_rows = await self._ro(
-            edges_query, {"symbol": symbol, "max_edges": max_edges},
+            edges_query,
+            {"symbol": symbol, "max_edges": max_edges},
         )
 
         seen_nodes: dict[str, dict] = {}
@@ -655,28 +689,39 @@ class GraphQueries:
                 },
             )
 
-        return {"nodes": list(seen_nodes.values()), "edges": edges}
+        raw: dict[str, Any] = {
+            "nodes": list(seen_nodes.values()),
+            "edges": edges,
+        }
+        elements = format_elements(raw)
+        return {
+            "elements": elements,
+            "nodes": list(seen_nodes.values()),
+            "edges": edges,
+            "style": build_style_json(),
+            "has_more": False,
+            "page": page,
+            "page_size": page_size,
+        }
 
     @staticmethod
     def _node_key(labels: list[str], props: dict) -> str:
         """Build a stable node ID from labels and key properties."""
         label = labels[0] if labels else "Unknown"
-        if label == "Company":
-            return f"Company:{props.get('symbol', '')}"
-        if label == "Person":
-            return f"Person:{props.get('person_name', '')}"
-        if label == "Sector":
-            return f"Sector:{props.get('name', '')}"
-        if label == "Industry":
-            return f"Industry:{props.get('name', '')}"
-        if label == "MacroIndicator":
-            return f"Macro:{props.get('name', '')}:{props.get('date', '')}"
-        if label == "Country":
-            return f"Country:{props.get('code', '')}"
-        if label == "Indicator":
-            return f"Indicator:{props.get('symbol', '')}:{props.get('year', '')}:{props.get('quarter', '')}"
-        if label == "FinancialStatement":
-            return f"FS:{props.get('symbol', '')}:{props.get('statement_type', '')}:{props.get('year', '')}:{props.get('quarter', '')}"
+        _key_patterns: dict[str, tuple[str, ...]] = {
+            "Company": ("symbol",),
+            "Person": ("person_name",),
+            "Sector": ("name",),
+            "Industry": ("name",),
+            "MacroIndicator": ("name", "date"),
+            "Country": ("code",),
+            "Indicator": ("symbol", "year", "quarter"),
+            "FinancialStatement": ("symbol", "statement_type", "year", "quarter"),
+        }
+        parts = _key_patterns.get(label)
+        if parts:
+            key_str = ":".join(str(props.get(p, "")) for p in parts)
+            return f"{label}:{key_str}"
         return f"{label}:{hash(frozenset(props.items()))}"
 
     # ------------------------------------------------------------------

@@ -13,6 +13,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from ourgraph.constants import SUPPLY_CHAIN_MAP
+
 if TYPE_CHECKING:
     from ourgraph.graph.queries import GraphQueries
 
@@ -21,102 +23,6 @@ logger = logging.getLogger(__name__)
 # Minimum thresholds for discovery
 _MIN_INDIRECT_OWNERSHIP_PCT = 5.0
 _MIN_CROSS_INFLUENCE_DELTA = 5.0
-
-# Industry-to-industry supply chain adjacency.
-# Maps a producer industry → list of customer industries that typically
-# buy from the producer.
-_SUPPLY_CHAIN_MAP: dict[str, list[str]] = {
-    # Steel → downstream
-    "Steel": [
-        "Automotive",
-        "Construction",
-        "Appliances",
-        "Machinery",
-        "Industrial Engineering",
-        "Real Estate",
-        "Infrastructure",
-        "Manufacturing",
-        "Packaging",
-        "Electronics",
-    ],
-    # Basic Resources → downstream
-    "Basic Resources": [
-        "Industrial Engineering",
-        "Manufacturing",
-        "Construction",
-        "Packaging",
-        "Automotive",
-        "Machinery",
-    ],
-    # Chemicals → downstream
-    "Chemicals": [
-        "Agriculture",
-        "Food",
-        "Pharmaceuticals",
-        "Textiles",
-        "Construction",
-        "Manufacturing",
-        "Plastics",
-    ],
-    # Oil & Gas → downstream
-    "Oil & Gas": [
-        "Chemicals",
-        "Transportation",
-        "Manufacturing",
-        "Power Generation",
-        "Aviation",
-        "Logistics",
-    ],
-    # Energy → everyone
-    "Energy": [
-        "Manufacturing",
-        "Transportation",
-        "Technology",
-        "Consumer Goods",
-        "All sectors",
-    ],
-    # Construction → downstream
-    "Construction": [
-        "Real Estate",
-        "Infrastructure",
-        "Industrial Engineering",
-        "Transportation",
-        "Energy",
-    ],
-    # Technology → downstream (everyone uses tech)
-    "Technology": [
-        "Finance",
-        "Healthcare",
-        "Retail",
-        "Manufacturing",
-        "Transportation",
-        "Telecommunications",
-        "All sectors",
-    ],
-    # Plastics & Packaging → downstream
-    "Plastics": [
-        "Food",
-        "Consumer Goods",
-        "Pharmaceuticals",
-        "Packaging",
-        "Retail",
-    ],
-    # Agriculture → downstream
-    "Agriculture": [
-        "Food",
-        "Beverages",
-        "Textiles",
-        "Retail",
-    ],
-    # Logistics → downstream
-    "Logistics": [
-        "Manufacturing",
-        "Retail",
-        "E-commerce",
-        "Food",
-        "All sectors (supply chain)",
-    ],
-}
 
 
 class GraphDiscovery:
@@ -367,7 +273,7 @@ class GraphDiscovery:
     ) -> list[dict[str, Any]]:
         """Infer potential supplier-customer relationships based on industry links.
 
-        Uses the ``_SUPPLY_CHAIN_MAP`` to identify which industries typically
+        Uses the ``SUPPLY_CHAIN_MAP`` to identify which industries typically
         supply which other industries, then suggests relationships between
         companies in those industries.
         """
@@ -424,7 +330,7 @@ class GraphDiscovery:
         sup_lower = supplier_industry.lower()
         cust_lower = customer_industry.lower()
 
-        for prod_industry, customers in _SUPPLY_CHAIN_MAP.items():
+        for prod_industry, customers in SUPPLY_CHAIN_MAP.items():
             if prod_industry.lower() in sup_lower or sup_lower in prod_industry.lower():
                 for cust in customers:
                     if cust.lower() in cust_lower or cust_lower in cust.lower():

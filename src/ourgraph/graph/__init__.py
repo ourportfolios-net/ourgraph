@@ -13,16 +13,8 @@ from ourgraph.graph.orm import (
     Sector,
     _BaseNode,
 )
-from ourgraph.graph.relationship_manager import RelationshipManager
-from ourgraph.graph.relationship_schema import (
-    RELATIONSHIP_REGISTRY,
-    RelationshipDescriptor,
-    list_relationship_types,
-    validate_relationship,
-)
 
 __all__ = [
-    "RELATIONSHIP_REGISTRY",
     "Company",
     "Country",
     "FinancialStatement",
@@ -32,10 +24,6 @@ __all__ = [
     "MacroIndicator",
     "NodeProperty",
     "Person",
-    "RelationshipDescriptor",
-    "RelationshipManager",
     "Sector",
     "_BaseNode",
-    "list_relationship_types",
-    "validate_relationship",
 ]

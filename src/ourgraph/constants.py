@@ -118,6 +118,102 @@ MACRO_MAX_RETRIES = 3
 MACRO_RETRY_MIN_WAIT = 4  # seconds
 MACRO_RETRY_MAX_WAIT = 60  # seconds
 
+# Industry-to-industry supply chain adjacency.
+# Maps a producer industry → list of customer industries that typically
+# buy from the producer.
+SUPPLY_CHAIN_MAP: dict[str, list[str]] = {
+    # Steel → downstream
+    "Steel": [
+        "Automotive",
+        "Construction",
+        "Appliances",
+        "Machinery",
+        "Industrial Engineering",
+        "Real Estate",
+        "Infrastructure",
+        "Manufacturing",
+        "Packaging",
+        "Electronics",
+    ],
+    # Basic Resources → downstream
+    "Basic Resources": [
+        "Industrial Engineering",
+        "Manufacturing",
+        "Construction",
+        "Packaging",
+        "Automotive",
+        "Machinery",
+    ],
+    # Chemicals → downstream
+    "Chemicals": [
+        "Agriculture",
+        "Food",
+        "Pharmaceuticals",
+        "Textiles",
+        "Construction",
+        "Manufacturing",
+        "Plastics",
+    ],
+    # Oil & Gas → downstream
+    "Oil & Gas": [
+        "Chemicals",
+        "Transportation",
+        "Manufacturing",
+        "Power Generation",
+        "Aviation",
+        "Logistics",
+    ],
+    # Energy → everyone
+    "Energy": [
+        "Manufacturing",
+        "Transportation",
+        "Technology",
+        "Consumer Goods",
+        "All sectors",
+    ],
+    # Construction → downstream
+    "Construction": [
+        "Real Estate",
+        "Infrastructure",
+        "Industrial Engineering",
+        "Transportation",
+        "Energy",
+    ],
+    # Technology → downstream (everyone uses tech)
+    "Technology": [
+        "Finance",
+        "Healthcare",
+        "Retail",
+        "Manufacturing",
+        "Transportation",
+        "Telecommunications",
+        "All sectors",
+    ],
+    # Plastics & Packaging → downstream
+    "Plastics": [
+        "Food",
+        "Consumer Goods",
+        "Pharmaceuticals",
+        "Packaging",
+        "Retail",
+    ],
+    # Agriculture → downstream
+    "Agriculture": [
+        "Food",
+        "Beverages",
+        "Textiles",
+        "Retail",
+    ],
+    # Logistics → downstream
+    "Logistics": [
+        "Manufacturing",
+        "Retail",
+        "E-commerce",
+        "Food",
+        "All sectors (supply chain)",
+    ],
+}
+
 # Country name mappings (ISO code → name)
 MACRO_COUNTRY_NAMES = {
     "VN": "Vietnam",

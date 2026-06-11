@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 import typer
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 
 from ourgraph.constants import (
@@ -36,6 +37,8 @@ from ourgraph.constants import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     import polars as pl
 
     from ourgraph.config import AppSettings
@@ -205,12 +208,7 @@ def ingest_full(
     asyncio.run(_run())
 
 
-@ingest_app.command("daily")
-def ingest_daily() -> None:
-    """Daily update is not needed after removing price data."""
-    console.print(
-        "[yellow]Daily update skipped — price data removed from graph[/yellow]",
-    )
+
 
 
 # Curated tickers with rich cross-relationships for testing the knowledge graph.
@@ -491,58 +489,64 @@ def query(
 # ===========================================================================
 
 
+def _run_graph_query(
+    query_fn: Callable[..., Awaitable[pl.DataFrame]],
+    description: str,
+    /,
+    *args: object,
+    **kwargs: object,
+) -> None:
+    """Run an async graph query and print results as a table.
+
+    Args:
+        query_fn: Method of ``GraphQueries`` to call (e.g. ``GraphQueries.get_sector_peers``).
+        description: Human-readable label for the "No ... found" empty message.
+        *args: Positional args forwarded to ``query_fn`` after the ``queries`` instance.
+        **kwargs: Keyword args forwarded to ``query_fn`` after the ``queries`` instance.
+
+    """
+    settings = _settings()
+    from ourgraph.graph.queries import GraphQueries
+
+    async def _run() -> pl.DataFrame:
+        async with GraphQueries.from_settings(settings.falkordb) as queries:
+            return await query_fn(queries, *args, **kwargs)
+
+    df: pl.DataFrame = asyncio.run(_run())
+    if df.is_empty():
+        console.print(f"[yellow]No {description} found.[/yellow]")
+        return
+    console.print(df.to_pandas().to_string(index=False))
+
+
 @graph_app.command("peers")
 def graph_peers(
     symbol: str = typer.Argument(..., help="Ticker symbol"),
     limit: int = typer.Option(DEFAULT_PEERS_LIMIT, "--limit", "-l"),
 ) -> None:
     """List sector peers for a symbol."""
-    settings = _settings()
-    from ourgraph.graph.queries import GraphQueries
-
-    async def _run() -> pl.DataFrame:
-        async with GraphQueries.from_settings(settings.falkordb) as queries:
-            return await queries.get_sector_peers(symbol, limit=limit)
-
-    df: pl.DataFrame = asyncio.run(_run())
-    if df.is_empty():
-        console.print(f"[yellow]No peers found for {symbol}[/yellow]")
-        return
-    console.print(df.to_pandas().to_string(index=False))
+    _run_graph_query(
+        lambda q, s=symbol, l=limit: q.get_sector_peers(s, limit=l),  # noqa: E741
+        f"peers for {symbol}",
+    )
 
 
 @graph_app.command("subs")
 def graph_subs(symbol: str = typer.Argument(..., help="Ticker symbol")) -> None:
     """List direct subsidiaries of a company."""
-    settings = _settings()
-    from ourgraph.graph.queries import GraphQueries
-
-    async def _run() -> pl.DataFrame:
-        async with GraphQueries.from_settings(settings.falkordb) as queries:
-            return await queries.get_subsidiaries(symbol)
-
-    df: pl.DataFrame = asyncio.run(_run())
-    if df.is_empty():
-        console.print(f"[yellow]No subsidiaries found for {symbol}[/yellow]")
-        return
-    console.print(df.to_pandas().to_string(index=False))
+    _run_graph_query(
+        lambda q, s=symbol: q.get_subsidiaries(s),
+        f"subsidiaries for {symbol}",
+    )
 
 
 @graph_app.command("shareholders")
 def graph_shareholders(symbol: str = typer.Argument(..., help="Ticker symbol")) -> None:
     """List major shareholders (companies + individual people)."""
-    settings = _settings()
-    from ourgraph.graph.queries import GraphQueries
-
-    async def _run() -> pl.DataFrame:
-        async with GraphQueries.from_settings(settings.falkordb) as queries:
-            return await queries.get_shareholders(symbol)
-
-    df: pl.DataFrame = asyncio.run(_run())
-    if df.is_empty():
-        console.print(f"[yellow]No shareholders found for {symbol}[/yellow]")
-        return
-    console.print(df.to_pandas().to_string(index=False))
+    _run_graph_query(
+        lambda q, s=symbol: q.get_shareholders(s),
+        f"shareholders for {symbol}",
+    )
 
 
 @graph_app.command("insiders")
@@ -551,39 +555,21 @@ def graph_insiders(symbol: str = typer.Argument(..., help="Ticker symbol")) -> N
 
     Dual-role people appear with both officer position and stake shown.
     """
-    settings = _settings()
-    from ourgraph.graph.queries import GraphQueries
-
-    async def _run() -> pl.DataFrame:
-        async with GraphQueries.from_settings(settings.falkordb) as queries:
-            return await queries.get_company_insiders(symbol)
-
-    df: pl.DataFrame = asyncio.run(_run())
-    if df.is_empty():
-        console.print(f"[yellow]No insider data found for {symbol}[/yellow]")
-        return
-    console.print(df.to_pandas().to_string(index=False))
+    _run_graph_query(
+        lambda q, s=symbol: q.get_company_insiders(s),
+        f"insider data for {symbol}",
+    )
 
 
 @graph_app.command("person")
 def graph_person(name: str = typer.Argument(..., help="Person name")) -> None:
     """Show all roles a person holds across companies."""
-    settings = _settings()
-    from ourgraph.graph.builder import _normalize_person_name
-    from ourgraph.graph.queries import GraphQueries
+    from ourgraph.graph.builder._helpers import normalize_person_name
 
-    # Normalize the search term to match the stored format
-    normalized_name = _normalize_person_name(name)
-
-    async def _run() -> pl.DataFrame:
-        async with GraphQueries.from_settings(settings.falkordb) as queries:
-            return await queries.get_person_roles(normalized_name)
-
-    df: pl.DataFrame = asyncio.run(_run())
-    if df.is_empty():
-        console.print(f"[yellow]No data found for {name}[/yellow]")
-        return
-    console.print(df.to_pandas().to_string(index=False))
+    _run_graph_query(
+        lambda q, n=name: q.get_person_roles(normalize_person_name(n)),
+        f"data for {name}",
+    )
 
 
 @graph_app.command("shared-insiders")
@@ -591,18 +577,10 @@ def graph_shared_insiders(
     limit: int = typer.Option(DEFAULT_SHARED_INSIDERS_LIMIT, "--limit", "-l"),
 ) -> None:
     """Find people who hold insider roles at multiple companies (hidden influence network)."""
-    settings = _settings()
-    from ourgraph.graph.queries import GraphQueries
-
-    async def _run() -> pl.DataFrame:
-        async with GraphQueries.from_settings(settings.falkordb) as queries:
-            return await queries.find_shared_insiders(limit=limit)
-
-    df: pl.DataFrame = asyncio.run(_run())
-    if df.is_empty():
-        console.print("[yellow]No shared insiders found.[/yellow]")
-        return
-    console.print(df.to_pandas().to_string(index=False))
+    _run_graph_query(
+        lambda q, l=limit: q.find_shared_insiders(limit=l),  # noqa: E741
+        "shared insiders",
+    )
 
 
 @graph_app.command("network")
@@ -616,18 +594,10 @@ def graph_network(
     limit: int = typer.Option(DEFAULT_NETWORK_LIMIT, "--limit", "-l"),
 ) -> None:
     """Show inter-company relationship network (ownership, subsidiaries, competition)."""
-    settings = _settings()
-    from ourgraph.graph.queries import GraphQueries
-
-    async def _run() -> pl.DataFrame:
-        async with GraphQueries.from_settings(settings.falkordb) as queries:
-            return await queries.get_company_network(symbol=symbol, limit=limit)
-
-    df: pl.DataFrame = asyncio.run(_run())
-    if df.is_empty():
-        console.print("[yellow]No network data found.[/yellow]")
-        return
-    console.print(df.to_pandas().to_string(index=False))
+    _run_graph_query(
+        lambda q, s=symbol, l=limit: q.get_company_network(symbol=s, limit=l),  # noqa: E741
+        "network data",
+    )
 
 
 @graph_app.command("cross-shareholding")
@@ -635,18 +605,10 @@ def graph_cross_shareholding(
     limit: int = typer.Option(DEFAULT_CROSS_SHAREHOLDING_LIMIT, "--limit", "-l"),
 ) -> None:
     """Find cross-shareholding pairs in the graph."""
-    settings = _settings()
-    from ourgraph.graph.queries import GraphQueries
-
-    async def _run() -> pl.DataFrame:
-        async with GraphQueries.from_settings(settings.falkordb) as queries:
-            return await queries.find_cross_shareholding(limit=limit)
-
-    df: pl.DataFrame = asyncio.run(_run())
-    if df.is_empty():
-        console.print("[yellow]No cross-shareholding pairs found.[/yellow]")
-        return
-    console.print(df.to_pandas().to_string(index=False))
+    _run_graph_query(
+        lambda q, l=limit: q.find_cross_shareholding(limit=l),  # noqa: E741
+        "cross-shareholding pairs",
+    )
 
 
 @graph_app.command("discover")
@@ -716,23 +678,12 @@ def graph_macro(
     limit: int = typer.Option(50, "--limit", "-l"),
 ) -> None:
     """Query macro economic indicators."""
-    settings = _settings()
-    from ourgraph.graph.queries import GraphQueries
-
-    async def _run() -> pl.DataFrame:
-        async with GraphQueries.from_settings(settings.falkordb) as queries:
-            return await queries.get_macro_indicators(
-                country=country,
-                category=category,
-                name=name,
-                limit=limit,
-            )
-
-    df: pl.DataFrame = asyncio.run(_run())
-    if df.is_empty():
-        console.print("[yellow]No macro indicators found.[/yellow]")
-        return
-    console.print(df.to_pandas().to_string(index=False))
+    _run_graph_query(
+        lambda q, c=country, cat=category, n=name, l=limit: q.get_macro_indicators(  # noqa: E741
+            country=c, category=cat, name=n, limit=l,
+        ),
+        "macro indicators",
+    )
 
 
 @graph_app.command("macro-stats")
@@ -944,8 +895,6 @@ def diagnose(
     Prints the columns, row counts, and sample data for each fetch method.
     Use this to debug missing nodes (industry, officers, etc.).
     """
-    import asyncio
-
     settings = _settings()
     from ourgraph.ingest.vnstock_fetcher import VnstockFetcher
 

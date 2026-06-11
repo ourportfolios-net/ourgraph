@@ -128,6 +128,20 @@ class Prop:
     # Country
     CODE = "code"
 
+    # Price history (computed from OHLCV)
+    PRICE_CURRENT = "price_current"
+    PRICE_52W_HIGH = "price_52w_high"
+    PRICE_52W_LOW = "price_52w_low"
+    VOLATILITY_90D = "volatility_90d"
+    AVG_VOLUME_30D = "avg_volume_30d"
+    RETURN_1M = "return_1m"
+    RETURN_3M = "return_3m"
+    RETURN_1Y = "return_1y"
+    PRICE_MIN = "price_min"
+    PRICE_MAX = "price_max"
+    PRICE_AVG = "price_avg"
+    PRICE_MEDIAN = "price_median"
+
     # Event metadata (Phase 1b — VCI corporate actions)
     LAST_DIVIDEND_DATE = "last_dividend_date"
     LAST_ISSUANCE_DATE = "last_issuance_date"

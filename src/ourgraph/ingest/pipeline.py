@@ -176,7 +176,7 @@ class Pipeline:
 
             await self._ingest_per_symbol(builder, symbols, name_to_symbol)
             # Deduplicate nodes before generating COMPETES_WITH edges
-            dedupe_stats = await builder.deduplicate_nodes()
+            dedupe_stats = await builder.deduplicate_nodes()  # type: ignore[attr-defined]
             logger.info("Pre-competition deduplication: %s", dedupe_stats)
             # Generate COMPETES_WITH edges after all company data is ingested
             await builder.upsert_competes_with()

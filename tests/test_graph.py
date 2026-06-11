@@ -20,7 +20,7 @@ def test_node_labels_defined() -> None:
         "NodeLabel.FINANCIAL_STATEMENT mismatch",
     )
     _expect(NodeLabel.INDICATOR == "Indicator", "NodeLabel.INDICATOR mismatch")
-    _expect(NodeLabel.OFFICER == "Officer", "NodeLabel.OFFICER mismatch")
+    _expect(NodeLabel.PERSON == "Person", "NodeLabel.PERSON mismatch")
 
 
 def test_rel_types_defined() -> None:
@@ -38,7 +38,7 @@ def test_rel_types_defined() -> None:
         RelType.HOLDS_STAKE_IN == "HOLDS_STAKE_IN",
         "RelType.HOLDS_STAKE_IN mismatch",
     )
-    _expect(RelType.LED_BY == "LED_BY", "RelType.LED_BY mismatch")
+    _expect(RelType.IS_OFFICER == "IS_OFFICER", "RelType.IS_OFFICER mismatch")
 
 
 def test_props_defined() -> None:
@@ -70,7 +70,7 @@ def test_graph_builder_from_settings_does_not_connect() -> None:
 
     settings = FalkorDBSettings()
 
-    with patch("ourgraph.graph.builder.build_falkordb_client") as mock_client:
+    with patch("ourgraph.db.falkordb.build_falkordb_client") as mock_client:
         mock_client.return_value = object()
         builder = GraphBuilder.from_settings(settings)
         _expect(builder is not None, "Expected builder instance")

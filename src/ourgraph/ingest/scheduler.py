@@ -15,8 +15,6 @@ from typing import TYPE_CHECKING
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from ourgraph.ingest.pipeline import Pipeline
-
 if TYPE_CHECKING:
     from ourgraph.config import AppSettings
 
@@ -80,12 +78,7 @@ class DailyScheduler:
         logger.info("Scheduler stopped")
 
     async def _run_daily_update(self) -> None:
-        logger.info("Scheduled daily update triggered")
-        pipeline = Pipeline(self._settings)
-        try:
-            await pipeline.run_daily_update()
-        except Exception:
-            logger.exception("Daily update failed")
+        logger.info("Scheduled daily update skipped — price data removed from graph")
 
 
 def run_scheduler(settings: AppSettings) -> None:

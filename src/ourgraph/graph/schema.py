@@ -9,27 +9,42 @@ from __future__ import annotations
 
 class NodeLabel:
     COMPANY = "Company"
+    PERSON = "Person"  # Individual — officer, individual shareholder, or both
     SECTOR = "Sector"
     INDUSTRY = "Industry"
-    STOCK_PRICE = "StockPrice"
     FINANCIAL_STATEMENT = "FinancialStatement"
     INDICATOR = "Indicator"
-    OFFICER = "Officer"
     DATE = "Date"
     QUARTER = "Quarter"
     YEAR = "Year"
+    MACRO_INDICATOR = "MacroIndicator"
+    COUNTRY = "Country"
+    BOND = "Bond"
 
 
 class RelType:
+    # Ownership & Control
+    SUBSIDIARY_OF = "SUBSIDIARY_OF"  # Company → Company
+    HOLDS_STAKE_IN = "HOLDS_STAKE_IN"  # (Company|Person) → Company
+
+    # Competition & Market
+    COMPETES_WITH = "COMPETES_WITH"  # Company → Company (symmetric)
+
+    # People & Roles
+    IS_OFFICER = "IS_OFFICER"  # Person → Company (general officer)
+    IS_BOARD_MEMBER = "IS_BOARD_MEMBER"  # Person → Company (board role)
+    IS_FOUNDER = "IS_FOUNDER"  # Person → Company (founder)
+    IS_EXECUTIVE = "IS_EXECUTIVE"  # Person → Company (C-level/executive)
+
+    # Company → Sector/Industry
+    BELONGS_TO = "BELONGS_TO"
+    BELONGS_TO_INDUSTRY = "BELONGS_TO_INDUSTRY"
+
     # Temporal hierarchy (Date → Quarter → Year)
     IN_QUARTER = "IN_QUARTER"
     IN_YEAR = "IN_YEAR"
 
-    # Company → StockPrice → Date
-    HAS_STOCK_PRICE = "HAS_STOCK_PRICE"
-    RECORDED_ON = "RECORDED_ON"
-
-    # Company → Indicator → Date/Quarter
+    # Company → Indicator → Quarter
     HAS_INDICATOR = "HAS_INDICATOR"
     MEASURED_ON = "MEASURED_ON"
 
@@ -38,17 +53,23 @@ class RelType:
     FOR_QUARTER = "FOR_QUARTER"
     FOR_YEAR = "FOR_YEAR"
 
-    # Company → Sector/Industry
-    BELONGS_TO = "BELONGS_TO"
-    BELONGS_TO_INDUSTRY = "BELONGS_TO_INDUSTRY"
+    # Audit
+    AUDITED_BY = "AUDITED_BY"  # Company → Company (audit firm)
 
-    # Company ↔ Company
-    COMPETES_WITH = "COMPETES_WITH"
-    SUBSIDIARY_OF = "SUBSIDIARY_OF"
-    HOLDS_STAKE_IN = "HOLDS_STAKE_IN"
+    # MacroIndicator relationships
+    HAS_MACRO_INDICATOR = "HAS_MACRO_INDICATOR"  # Country → MacroIndicator
+    AFFECTS_SECTOR = "AFFECTS_SECTOR"  # MacroIndicator → Sector
+    AFFECTS_INDUSTRY = "AFFECTS_INDUSTRY"  # MacroIndicator → Industry
 
-    # Company → Officer
-    LED_BY = "LED_BY"
+    # Phase 2: Structured scrapers — corporate disclosure relationships
+    RELATED_PARTY_TRANSACTION = "RELATED_PARTY_TRANSACTION"  # Company ↔ Company
+    GUARANTEES = "GUARANTEES"  # Company → Company
+    LENDS_TO = "LENDS_TO"  # Company → Company
+    HAS_JOINT_VENTURE_WITH = "HAS_JOINT_VENTURE_WITH"  # Company ↔ Company
+    UNDERWRITTEN_BY = "UNDERWRITTEN_BY"  # Company → Company (issuer → underwriter)
+    HAS_BUSINESS_COOPERATION = "HAS_BUSINESS_COOPERATION"  # Company ↔ Company
+    STATE_OWNS = "STATE_OWNS"  # Company → Company (state entity → company)
+    HAS_BOND = "HAS_BOND"  # Company → Bond
 
 
 class Prop:
@@ -64,20 +85,22 @@ class Prop:
     WEBSITE = "website"
     OUTSTANDING_SHARE = "outstanding_share"
     FOREIGN_PERCENT = "foreign_percent"
-
-    # StockPrice (paper naming)
     DATE = "date"
-    OPEN = "open"  # stck_oprc
-    HIGH = "high"  # stck_hgpr
-    LOW = "low"  # stck_lwpr
-    CLOSE = "close"  # stck_clpr
-    VOLUME = "volume"
 
-    # Indicator (paper: pbr, per, eps + full payload)
+    # Indicator (financial ratios)
     PBR = "pbr"
     PER = "per"
     EPS = "eps"
-    PAYLOAD = "payload"  # full JSON for all metrics
+    ROE = "roe"
+    ROA = "roa"
+    DEBT_TO_EQUITY = "debt_to_equity"
+    CURRENT_RATIO = "current_ratio"
+    QUICK_RATIO = "quick_ratio"
+    GROSS_MARGIN = "gross_margin"
+    NET_MARGIN = "net_margin"
+    REVENUE_GROWTH = "revenue_growth"
+    DIVIDEND_YIELD = "dividend_yield"
+    PAYLOAD = "payload"
 
     # FinancialStatement
     PERIOD = "period"
@@ -89,12 +112,30 @@ class Prop:
     MONTH = "month"
     DAY = "day"
 
-    # Officer
-    OFFICER_NAME = "officer_name"
+    # Person
+    PERSON_NAME = "person_name"
     POSITION = "position"
     OWN_PERCENT = "own_percent"
+
+    # MacroIndicator
+    VALUE = "value"
+    UNIT = "unit"
+    COUNTRY = "country"
+    CATEGORY = "category"
+    FREQUENCY = "frequency"
+    SOURCE = "source"
+
+    # Country
+    CODE = "code"
+
+    # Event metadata (Phase 1b — VCI corporate actions)
+    LAST_DIVIDEND_DATE = "last_dividend_date"
+    LAST_ISSUANCE_DATE = "last_issuance_date"
+    LAST_MEETING_DATE = "last_meeting_date"
 
     # Edges
     OWNERSHIP_PERCENT = "ownership_percent"
     STAKE_PERCENT = "stake_percent"
     RELATION_TYPE = "relation_type"
+    REASON = "reason"
+    AUDITOR_NAME = "auditor_name"

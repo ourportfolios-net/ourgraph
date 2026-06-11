@@ -1,403 +1,327 @@
 # ourgraph
 
-Vietnamese stock market knowledge graph built on FalkorDB + Graphiti + vnstock + Polars.
-
-Based on the paper: *Knowledge Graph Construction for Stock Markets with LLM-Based Explainable Reasoning* (arXiv:2601.11528)
+A Vietnamese stock market knowledge graph built on FalkorDB + Graphiti, enabling LLM-powered reasoning over company relationships, ownership chains, sector groupings, and insider networks across all VNIndex (HOSE) constituents.
 
 ---
 
-## Stack
+## What it does
 
-| Layer | Technology | Why |
-|---|---|---|
-| Graph DB | FalkorDB (Docker) | GraphBLAS, #1 GraphRAG-Bench, native Graphiti support |
-| Temporal KG / GraphRAG | Graphiti | Hybrid BM25+vector+graph search, temporal facts |
-| Data pipeline | Polars | Fast, memory-efficient, no pandas |
-| Vietnamese stock data | vnstock 4.0 | HOSE/HNX coverage, company/financial/ownership data |
-| Existing data | Supabase (PostgreSQL) | Your existing database — used as priority cache |
-| Local LLM + embeddings | Ollama | OpenAI-compatible, fully local, modular |
-| Scheduler | APScheduler | Daily batch updates via cron |
-| Config | pydantic-settings | 12-factor, all env-vars, nothing hardcoded |
-| CLI | Typer + Rich | Clean commands with coloured output |
-| Project tooling | uv + ruff + ty | Fast, modern, from Astral |
+ourgraph builds two complementary graphs from vnstock data:
 
----
+**Raw structured graph (FalkorDB)** — a precise, queryable Cypher graph encoding:
+- Company nodes with financials, sector, and exchange metadata
+- Person nodes (officers and individual shareholders, deduplicated)
+- Ownership chains: `SUBSIDIARY_OF`, `HOLDS_STAKE_IN`
+- Insider roles: `IS_OFFICER` (with position as edge property)
+- Sector/industry groupings: `BELONGS_TO`, `BELONGS_TO_INDUSTRY`
+- Competition: `COMPETES_WITH`
+- Price history: `StockPrice → Date → Quarter → Year`
 
-## Prerequisites
-
-- Python ≥ 3.13
-- [uv](https://docs.astral.sh/uv/) installed
-- [Docker](https://docs.docker.com/get-docker/) installed
-- [Ollama](https://ollama.ai) installed and running
-
----
-
-## Quick Start
-
-### 1. Clone and install
-
-```bash
-git clone <your-repo>
-cd ourgraph
-uv sync
-```
-
-### 2. Configure
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your values. The minimum required config:
-
-```env
-# Required: your Ollama models
-OLLAMA_LLM_MODEL=phi3.5          # or qwen3:4b, qwen2.5:7b, etc.
-OLLAMA_LLM_SMALL_MODEL=phi3.5
-OLLAMA_EMBEDDING_MODEL=nomic-embed-text
-
-# Optional: your Supabase database
-SUPABASE_DB_URL=postgresql://postgres:<password>@db.<ref>.supabase.co:5432/postgres
-```
-
-### 3. Pull Ollama models
-
-```bash
-# Embedding model (required by Graphiti)
-ollama pull nomic-embed-text
-
-# LLM model — choose one based on your hardware
-ollama pull phi3.5          # 3.8B, fastest on your hardware (247 tok/s)
-ollama pull qwen2.5:7b      # Better structured output, slower
-```
-
-### 4. Start FalkorDB
-
-```bash
-docker compose up -d
-```
-
-FalkorDB Browser UI will be available at http://localhost:3000
-
-### 5. First-time setup
-
-```bash
-uv run ourgraph setup
-```
-
-This creates all graph indices in FalkorDB and initialises Graphiti's schema.
-
-### 6. Run the pipeline
-
-```bash
-# Ingest everything (all symbols — takes a while)
-uv run ourgraph ingest full
-
-# Ingest a single symbol for testing
-uv run ourgraph ingest symbol VCB
-
-# Daily price update only (lightweight)
-uv run ourgraph ingest daily
-```
-
----
-
-## Commands Reference
-
-```bash
-# Show all commands
-uv run ourgraph --help
-
-# Show effective configuration
-uv run ourgraph info
-
-# === INGESTION ===
-
-# Full pipeline (all symbols)
-uv run ourgraph ingest full
-
-# Full pipeline for specific symbols
-uv run ourgraph ingest full VCB ACB TCB VNM FPT
-
-# Single symbol
-uv run ourgraph ingest symbol ACB
-
-# Today's price update only
-uv run ourgraph ingest daily
-
-# === SCHEDULER ===
-
-# Start daily scheduler daemon (blocks, use Ctrl+C to stop)
-uv run ourgraph schedule
-
-# === GRAPHRAG QUERIES ===
-
-# Natural language query over the temporal knowledge graph
-uv run ourgraph query "What are VCB's main subsidiaries?"
-uv run ourgraph query "Which companies does Mizuho Bank hold stakes in?"
-uv run ourgraph query "What is FPT's revenue trend over the last 4 quarters?"
-
-# With custom result count
-uv run ourgraph query "Top performing stocks by ROE" --results 20
-
-# === GRAPH QUERIES ===
-
-# Get sector peers
-uv run ourgraph graph peers VCB
-uv run ourgraph graph peers VCB --limit 30
-
-# Get subsidiaries
-uv run ourgraph graph subs VCB
-
-# Get major shareholders
-uv run ourgraph graph shareholders VCB
-
-# Get price history
-uv run ourgraph graph prices ACB
-uv run ourgraph graph prices ACB --start 2024-01-01 --end 2024-12-31
-
-# Find cross-shareholding pairs
-uv run ourgraph graph cross-shareholding
-```
-
----
-
-## Graph Schema
-
-The knowledge graph implements the schema from the paper:
-
-### Nodes
-
-| Label | Key Properties | Description |
-|---|---|---|
-| `Company` | `symbol`, `name`, `exchange`, `market_cap` | Listed company |
-| `Industry` | `name` | ICB industry classification |
-| `Sector` | `name` | ICB sector (top-level) |
-| `StockPrice` | `symbol`, `date`, `open`, `high`, `low`, `close`, `volume` | Daily OHLCV |
-| `FinancialStatement` | `symbol`, `statement_type`, `period`, `year`, `quarter`, `payload` | Balance sheet / income / cash flow (JSON payload) |
-| `FinancialIndicator` | `symbol`, `metric`, `year`, `quarter`, `value` | Financial ratios (PE, ROE, etc.) |
-| `Officer` | `officer_name`, `position`, `own_percent` | Board member / executive |
-
-### Relationships
-
-| Type | From → To | Properties |
-|---|---|---|
-| `BELONGS_TO_INDUSTRY` | Company → Industry | — |
-| `INDUSTRY_IN_SECTOR` | Industry → Sector | — |
-| `HAS_PRICE` | Company → StockPrice | — |
-| `HAS_STATEMENT` | Company → FinancialStatement | — |
-| `HAS_INDICATOR` | Company → FinancialIndicator | — |
-| `SUBSIDIARY_OF` | Company → Company | `ownership_percent`, `relation_type` |
-| `HOLDS_STAKE_IN` | Company → Company | `stake_percent` |
-| `LED_BY` | Company → Officer | — |
+**Graphiti temporal graph** — natural-language episodes ingested from the raw graph, enabling LLM queries like:
+- *"What are HPG's main subsidiaries?"*
+- *"Which companies would be affected if VCB's stock drops?"*
+- *"Who are the shared insiders between ACB and TCB?"*
 
 ---
 
 ## Architecture
 
 ```
-ourgraph/
-├── src/ourgraph/
-│   ├── config.py              # pydantic-settings — all env-driven config
-│   ├── cli.py                 # Typer CLI entry point
-│   │
-│   ├── db/
-│   │   ├── falkordb.py        # FalkorDB async client factory
-│   │   └── supabase.py        # Supabase/PostgreSQL reader (connectorx + polars)
-│   │
-│   ├── graph/
-│   │   ├── schema.py          # Node labels, rel types, property keys (constants)
-│   │   ├── builder.py         # Async graph builder (Cypher MERGE operations)
-│   │   └── queries.py         # Read-only graph query helpers
-│   │
-│   ├── ingest/
-│   │   ├── vnstock_fetcher.py # vnstock 4.0 data fetcher → polars DataFrames
-│   │   ├── supabase_fetcher.py# Your existing Supabase data → polars DataFrames
-│   │   ├── pipeline.py        # ETL orchestrator (batched, idempotent, async)
-│   │   └── scheduler.py       # APScheduler daily batch scheduler
-│   │
-│   ├── llm/
-│   │   └── factory.py         # LLM + embedder + reranker factory (modular)
-│   │
-│   └── graphiti_layer/
-│       ├── client.py          # Graphiti + FalkorDriver builder
-│       └── search.py          # GraphRAG search interface
-│
-├── tests/
-│   ├── test_config.py
-│   ├── test_pipeline.py
-│   └── test_graph.py
-│
-├── .env.example               # All config options documented
-├── docker-compose.yml         # FalkorDB service
-└── pyproject.toml             # uv project config
+vnstock API
+    │
+    ▼
+Pipeline
+    ├─► GraphBuilder ──────────────────► FalkorDB (raw structured graph)
+    │       Company, Person, Sector,          ourgraph graph
+    │       StockPrice, Indicator,
+    │       FinancialStatement nodes
+    │
+    └─► GraphitiIngester ─────────────► FalkorDB (Graphiti temporal graph)
+            Text episodes per company,        ourgraph_graphiti graph
+            sector groups, conglomerates,
+            shared insider networks
+                    │
+                    ▼
+              ourgraph query "..."
+              (LLM-powered GraphRAG)
 ```
 
-### Data flow
-
-```
-vnstock API ─────────────────────────────────────────────────────┐
-                                                                  │
-Supabase DB ──► SupabaseFetcher ──► polars DataFrame ──► Pipeline ──► GraphBuilder ──► FalkorDB
-(your existing)   (priority cache)    (Polars ETL)         (batched)   (Cypher MERGE)   (raw KG)
-                                                                                          │
-                                                               Graphiti ◄─────────────────┘
-                                                               (temporal KG, GraphRAG)
-                                                                  │
-                                                            GraphRAGSearch
-                                                            (hybrid search)
-                                                                  │
-                                                              Ollama LLM
-                                                            (local inference)
-```
-
-### Two graph layers
-
-1. **Raw structured graph** (`ourgraph` graph in FalkorDB)
-   Built directly by `GraphBuilder` using Cypher. Contains all structured data: companies, prices, financial statements, ownership. Queried directly via `GraphQueries`.
-
-2. **Temporal knowledge graph** (`ourgraph_graphiti` graph in FalkorDB)
-   Managed by Graphiti. Used for GraphRAG queries, temporal fact management, and LLM-powered search. Fed via `GraphRAGSearch.add_text_episode()`.
-
-Both graphs live in the same FalkorDB instance, separate graph names.
+Both graphs live in the same FalkorDB instance under different graph names (`ourgraph` and `ourgraph_graphiti`).
 
 ---
 
-## Data Sources and Priority
+## Node & relationship schema
 
-The pipeline uses a **Supabase-first** strategy:
+### Nodes
 
-| Data type | Primary | Fallback |
+| Label | Key property | Description |
 |---|---|---|
-| Symbol list | Supabase `tickers.overview_df` | vnstock `Listing.all_symbols()` |
-| Company overview | Supabase `tickers.overview_df` | vnstock `Company.overview()` |
-| Price history | Supabase `tickers.price_history` | vnstock `Quote.history()` |
-| Financial ratios | Supabase `tickers.ratio_quarterly` | vnstock `Finance.ratio()` |
-| Officers | Supabase `tickers.officers_df` | vnstock `Company.officers()` |
-| Shareholders | Supabase `tickers.shareholders_df` | vnstock `Company.shareholders()` |
-| Subsidiaries | — | vnstock `Company.subsidiaries()` (always fresh) |
-| Financial statements | — | vnstock `Finance.balance_sheet/income_statement/cash_flow()` |
+| `Company` | `symbol` | Listed company or institutional entity |
+| `Person` | `person_name` | Individual — officer, shareholder, or both |
+| `Sector` | `name` | Broad sector grouping |
+| `Industry` | `name` | ICB industry classification |
+| `StockPrice` | `symbol, date` | Daily OHLCV snapshot |
+| `Indicator` | `symbol, year, quarter` | Financial ratios (PBR, PER, EPS) |
+| `FinancialStatement` | `symbol, statement_type, year, quarter` | Balance sheet / income / cash flow (JSON payload) |
+| `Date` | `date` | Calendar date |
+| `Quarter` | `year, quarter` | Fiscal quarter |
+| `Year` | `year` | Fiscal year |
 
-If `SUPABASE_DB_URL` is not set, the pipeline falls back to vnstock entirely.
+### Relationships
+
+| Relationship | From → To | Key properties |
+|---|---|---|
+| `IS_OFFICER` | Person → Company | `position`, `own_percent` |
+| `HOLDS_STAKE_IN` | Person\|Company → Company | `stake_percent` |
+| `SUBSIDIARY_OF` | Company → Company | `ownership_percent`, `relation_type` |
+| `COMPETES_WITH` | Company ↔ Company | — |
+| `BELONGS_TO` | Company → Sector | — |
+| `BELONGS_TO_INDUSTRY` | Company → Industry | — |
+| `HAS_STOCK_PRICE` | Company → StockPrice | — |
+| `RECORDED_ON` | StockPrice → Date | — |
+| `HAS_INDICATOR` | Company → Indicator | — |
+| `MEASURED_ON` | Indicator → Quarter | — |
+| `HAS_FINANCIAL_STATEMENTS` | Company → FinancialStatement | — |
+| `FOR_QUARTER` | FinancialStatement → Quarter | — |
+| `FOR_YEAR` | FinancialStatement → Year | — |
+| `IN_QUARTER` | Date → Quarter | — |
+| `IN_YEAR` | Quarter → Year | — |
 
 ---
 
-## Local LLM Notes
+## Prerequisites
 
-Graphiti's entity extraction uses structured output. Performance with small models:
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/)
+- FalkorDB running locally (`docker run -p 6379:6379 falkordb/falkordb`)
+- Ollama running locally with at least:
+  - `ollama pull phi3.5` (LLM)
+  - `ollama pull nomic-embed-text` (embeddings)
 
-| Model | Structured Output | Speed | Recommendation |
-|---|---|---|---|
-| `phi3.5` (3.8B) | ⚠️ Unreliable | Fast | Use for query-time only |
-| `qwen2.5:7b` | ✅ Good | Medium | Best for entity extraction |
-| `qwen3:4b` | ✅ Good | Fast | Good balance |
+---
 
-**Important**: The raw structured graph (Company, StockPrice, etc.) is built directly from structured data **without any LLM calls**. Ollama is only used for:
-1. GraphRAG queries at query time
-2. Graphiti's `add_text_episode()` for free-text ingestion
-
-This means the knowledge graph works fully even if the LLM is slow or unreliable.
-
-### Recommended Ollama setup for your hardware (AMD Ryzen 7 8845H, 27GB RAM)
+## Installation
 
 ```bash
-# Best embedding model (required)
-ollama pull nomic-embed-text
-
-# Best LLM for structured output at your hardware level
-ollama pull qwen2.5:7b     # ~4GB VRAM, good structured output
-# or
-ollama pull phi3.5          # ~2GB VRAM, fastest, less reliable for JSON
-
-# After pulling, update .env:
-# OLLAMA_LLM_MODEL=qwen2.5:7b
-# OLLAMA_LLM_SMALL_MODEL=qwen2.5:7b
+git clone <repo>
+cd ourgraph
+uv sync
 ```
 
----
+Copy `.env.example` to `.env` and configure:
 
-## Switching LLM Provider
-
-The LLM layer is fully modular. To switch from Ollama to a different provider, only `src/ourgraph/llm/factory.py` needs to change — no other code is affected.
-
-Current factory builds: `OpenAIGenericClient` → `OpenAIEmbedder` → `OpenAIRerankerClient`, all pointed at Ollama.
-
-To use a cloud provider instead, replace the factory functions with the appropriate Graphiti client classes (e.g. `AnthropicClient`, `GeminiClient`).
-
----
-
-## Production Deployment
-
-The project is designed for local dev with one-line migration to production.
-
-### FalkorDB
-
-Local: `docker compose up -d`
-
-Production: Same Docker image, or [FalkorDB Cloud](https://app.falkordb.com). Change only:
 ```env
-FALKORDB_HOST=your-production-host
+# FalkorDB
+FALKORDB_HOST=localhost
 FALKORDB_PORT=6379
-FALKORDB_USERNAME=your-user
-FALKORDB_PASSWORD=your-password
+FALKORDB_GRAPH_NAME=ourgraph
+
+# Ollama
+OLLAMA_BASE_URL=http://localhost:11434/v1
+OLLAMA_LLM_MODEL=phi3.5
+OLLAMA_LLM_SMALL_MODEL=phi3.5
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+OLLAMA_EMBEDDING_DIM=768
+
+# vnstock source (KBS works everywhere, VCI richer but local-only)
+VNSTOCK_SOURCE=KBS
+VNSTOCK_API_DELAY=1.0
+
+# Pipeline tuning
+PIPELINE_BATCH_SIZE=5
+PIPELINE_BATCH_DELAY=10.0
+
+# Optional: Supabase for cached data (speeds up ingestion significantly)
+SUPABASE_DB_URL=postgresql://...
 ```
-
-### Scheduler
-
-Run `uv run ourgraph schedule` as a systemd service or Docker container.
-
-### LLM
-
-Replace Ollama with a cloud API by editing `llm/factory.py`. Everything else stays the same.
 
 ---
 
-## Development
+## First-time setup
 
 ```bash
-# Run tests
-uv run pytest
-
-# Lint
-uv run ruff check src/ tests/
-
-# Type check
-uv run ty check src/
-
-# Format
-uv run ruff format src/ tests/
+# Create FalkorDB indices and Graphiti constraints (run once)
+uv run ourgraph setup
 ```
 
 ---
 
-## Troubleshooting
+## Running the pipeline
 
-**FalkorDB not reachable**
-```
-ConnectionRefusedError: [Errno 111] Connect call failed
-```
-→ Run `docker compose up -d` and wait for the health check to pass.
+```bash
+# Full pipeline: fetch all VNIndex (HOSE) stocks → raw graph + Graphiti
+uv run ourgraph ingest full
 
-**Ollama model not found**
-```
-model "phi3.5" not found
-```
-→ Run `ollama pull phi3.5` (or whichever model is in your `.env`).
+# Single symbol (useful for testing)
+uv run ourgraph ingest symbol HPG
 
-**Graphiti structured output failures**
-```
-1 validation error for ExtractedEntities
-```
-→ Try a larger/better model (`qwen2.5:7b`). Or reduce `body` length in `add_text_episode()`. The raw graph ingestion is unaffected.
+# If the raw graph exists but Graphiti is empty, re-feed without re-fetching:
+uv run ourgraph ingest graphiti
 
-**vnstock rate limiting**
-```
-HTTPError 429
-```
-→ Increase `PIPELINE_BATCH_DELAY` in `.env` (e.g. `5.0`).
+# Daily price refresh (lightweight, no Graphiti re-ingest)
+uv run ourgraph ingest daily
 
-**Supabase connection failure**
+# Run as a daemon on a cron schedule (default: weekdays 07:00)
+uv run ourgraph schedule
 ```
-RuntimeError: Supabase query failed
+
+The full pipeline on all ~400 VNIndex symbols takes several hours due to vnstock rate limiting. Use `PIPELINE_BATCH_DELAY` to tune throughput vs. API friendliness.
+
+---
+
+## Querying
+
+### LLM queries (Graphiti)
+
+```bash
+uv run ourgraph query "What are HPG's main subsidiaries?"
+uv run ourgraph query "Which companies would be affected if VCB's stock drops?"
+uv run ourgraph query "Who are the shared insiders between ACB and TCB?"
+uv run ourgraph query "What sector does MSN operate in and who are its competitors?"
+uv run ourgraph query "Which conglomerates control the most companies on VNIndex?"
 ```
-→ Check `SUPABASE_DB_URL` format. The pipeline falls back to vnstock automatically if this is not set.
+
+> **Note:** `ourgraph query` searches Graphiti, which is only populated after running `ourgraph ingest full` or `ourgraph ingest graphiti`. If it returns nothing, run the graphiti ingest first.
+
+### Structured graph queries (Cypher via CLI)
+
+```bash
+# Company network (ownership + competition only — no price/indicator noise)
+uv run ourgraph graph network
+uv run ourgraph graph network --symbol HPG
+
+# Sector peers
+uv run ourgraph graph peers VCB
+
+# Ownership
+uv run ourgraph graph subs MSN          # subsidiaries
+uv run ourgraph graph shareholders VCB  # companies + individual people
+
+# People
+uv run ourgraph graph insiders HPG      # officers + individual shareholders for one company
+uv run ourgraph graph person "Tran Dinh Long"  # all roles a person holds
+uv run ourgraph graph shared-insiders   # people on boards of multiple companies
+
+# Cross-shareholding detection
+uv run ourgraph graph cross-shareholding
+
+# Price history
+uv run ourgraph graph prices ACB --start 2024-01-01
+
+# Validation
+uv run ourgraph graph stats
+```
+
+### Direct Cypher (FalkorDB browser or redis-cli)
+
+For visualising the network graph directly in FalkorDB browser:
+
+```cypher
+-- Company-to-company network only (no price/fin noise)
+MATCH (a:Company)-[r:HOLDS_STAKE_IN|SUBSIDIARY_OF|COMPETES_WITH]->(b:Company)
+RETURN a, r, b
+LIMIT 200
+
+-- Ego-network for one company
+MATCH (c:Company {symbol: 'HPG'})-[r:HOLDS_STAKE_IN|SUBSIDIARY_OF|COMPETES_WITH|IS_OFFICER|BELONGS_TO_INDUSTRY]-(n)
+RETURN c, r, n
+
+-- People with roles at multiple companies (hidden influence network)
+MATCH (p:Person)-[r:IS_OFFICER|HOLDS_STAKE_IN]->(c:Company)
+WITH p, collect(DISTINCT c.symbol) AS companies, COUNT(DISTINCT c) AS n
+WHERE n > 1
+RETURN p.person_name, companies, n
+ORDER BY n DESC
+
+-- All relationships a specific person has
+MATCH (p:Person {person_name: 'Tran Dinh Long'})-[r]->(c:Company)
+RETURN p, r, c
+```
+
+---
+
+## Maintenance
+
+```bash
+# Remove duplicate nodes (safe to run multiple times)
+uv run ourgraph graph dedupe
+
+# Wipe the entire graph (requires --yes confirmation)
+uv run ourgraph graph clear --yes
+
+# Print current configuration
+uv run ourgraph info
+```
+
+---
+
+## How cross-ticker relationship reasoning works
+
+The LLM can infer relationships like "HPG drop → steel sector drop" because the Graphiti ingester builds three types of episodes that encode these links explicitly:
+
+**Company episodes** include sentences like:
+> *"HPG competes directly with: NKG, TIS, POM, HSG. A significant change in HPG's stock price may influence investor sentiment toward its sector peers."*
+
+**Sector group episodes** list all companies in the same industry:
+> *"The following Vietnamese companies all operate in the Steel Manufacturing industry: HPG, NKG, TIS, POM, HSG... A significant stock price movement in one of these companies is often a leading indicator for the others."*
+
+**Conglomerate episodes** encode parent-subsidiary chains:
+> *"MSN (Masan Group) is a conglomerate that controls: MML (Masan MeatLife, 85.7% owned), MHT (Masan High-Tech Materials, 52.1% owned)... Poor performance in any major subsidiary will negatively impact MSN's consolidated earnings and stock price."*
+
+**Shared insider episodes** capture the hidden influence network:
+> *"Nguyen Dang Quang has insider roles at multiple VNIndex companies: MSN, MML, VCF... decisions by Nguyen Dang Quang or events affecting their holdings may simultaneously affect the stock prices of all these companies."*
+
+---
+
+## Person vs. Company classification
+
+Shareholders are automatically classified as `Person` or `Company` nodes using a Vietnamese-aware heuristic in `utils/name_classifier.py`. The classifier:
+
+1. Checks for known Vietnamese surnames (Nguyen, Tran, Le, Pham, ...) at position 0 → **Person**
+2. Checks for Vietnamese legal form markers (CTCP, TNHH, MTV, ...) → **Company**
+3. Checks for institution keywords (Ngân hàng, Quỹ, Tập đoàn, ...) → **Company**
+4. Checks for English corporate tokens (JSC, Corp, Fund, Capital, ...) → **Company**
+5. Names longer than 6 tokens → **Company**
+6. Default → **Person** (conservative — misclassifying a company as a person is recoverable)
+
+A person who is both an officer and a shareholder at the same company is represented as a single `Person` node with both `IS_OFFICER` and `HOLDS_STAKE_IN` edges.
+
+To validate the classifier:
+```bash
+pytest tests/test_name_classifier.py -v
+```
+
+---
+
+## Project structure
+
+```
+src/ourgraph/
+├── config.py                    # Pydantic-settings, all env vars
+├── cli.py                       # Typer CLI entry point
+├── db/
+│   ├── engine.py                # SQLAlchemy async + sync engines (Supabase)
+│   ├── models.py                # ORM models for all Supabase tables
+│   ├── fetch_data.py            # Typed query functions → polars DataFrames
+│   └── falkordb.py              # FalkorDB async client factory
+├── graph/
+│   ├── schema.py                # NodeLabel, RelType, Prop constants
+│   ├── builder.py               # GraphBuilder — MERGE-based upserts
+│   └── queries.py               # GraphQueries — read-only Cypher queries
+├── graphiti_layer/
+│   ├── client.py                # Graphiti client factory (Ollama + FalkorDB)
+│   ├── ingester.py              # GraphitiIngester — raw graph → text episodes
+│   └── search.py                # GraphRAGSearch — query interface
+├── ingest/
+│   ├── pipeline.py              # Main ETL orchestrator
+│   ├── vnstock_fetcher.py       # vnstock API wrapper → polars
+│   ├── supabase_fetcher.py      # Supabase ORM fetcher → polars
+│   └── scheduler.py             # APScheduler daily cron
+├── llm/
+│   └── factory.py               # Ollama LLM + embedder + reranker factories
+└── utils/
+    ├── name_classifier.py       # Vietnamese person/company name heuristic
+    └── retry.py                 # Async + sync retry decorators
+tests/
+└── test_name_classifier.py      # Unit tests for name classification (no DB needed)
+```

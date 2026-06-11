@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from ourgraph.config import (
     AppSettings,
     FalkorDBSettings,
     OllamaSettings,
     PipelineSettings,
 )
+
+if TYPE_CHECKING:
+    from _pytest.monkeypatch import MonkeyPatch
 
 DEFAULT_FALKOR_PORT = 6379
 DEFAULT_EMBED_DIM = 768
@@ -38,7 +43,7 @@ def test_pipeline_defaults() -> None:
     _expect(s.batch_delay >= 0, "Expected non-negative batch delay")
 
 
-def test_app_settings_env_override(monkeypatch: object) -> None:
+def test_app_settings_env_override(monkeypatch: MonkeyPatch) -> None:
     setenv = monkeypatch.setenv
     setenv("FALKORDB_HOST", "myhost")
     setenv("FALKORDB_PORT", str(OVERRIDE_FALKOR_PORT))
@@ -54,7 +59,7 @@ def test_full_app_settings_composition() -> None:
     s = AppSettings()
     _expect(s.falkordb is not None, "Expected falkordb settings")
     _expect(s.ollama is not None, "Expected ollama settings")
-    _expect(s.supabase is not None, "Expected supabase settings")
+    _expect(s.tiger_data is not None, "Expected tiger_data settings")
     _expect(s.pipeline is not None, "Expected pipeline settings")
     _expect(s.scheduler is not None, "Expected scheduler settings")
     _expect(s.graphiti is not None, "Expected graphiti settings")

@@ -76,20 +76,3 @@ def test_normalise_price_df_no_rename_needed() -> None:
     result = normalise_fn(df, "VCB")
     _expect("date" in result.columns, "Expected date column")
     _expect(result["symbol"][0] == "VCB", "Expected symbol to remain VCB")
-
-
-def test_supabase_fetcher_graceful_without_url() -> None:
-    from ourgraph.config import get_settings
-    from ourgraph.ingest.supabase_fetcher import SupabaseFetcher
-
-    settings = get_settings()
-    settings.supabase.supabase_db_url = ""
-    fetcher = SupabaseFetcher()
-
-    _expect(fetcher.get_all_symbols() == [], "Expected empty symbol list")
-    _expect(
-        fetcher.get_company_overview().is_empty(),
-        "Expected empty overview DataFrame",
-    )
-    _expect(fetcher.get_price_history("VCB").is_empty(), "Expected empty price history")
-    _expect(fetcher.get_stats().is_empty(), "Expected empty stats DataFrame")

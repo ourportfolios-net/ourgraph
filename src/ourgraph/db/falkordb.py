@@ -19,7 +19,12 @@ def build_falkordb_client(settings: FalkorDBSettings) -> FalkorDB:
 
     Uses a connection pool (BlockingConnectionPool) automatically managed
     by the falkordb-py async client.
+
+    Prefers connection URL (settings.url) over individual host/port fields.
     """
+    if settings.url:
+        return FalkorDB.from_url(settings.url)
+
     kwargs: dict = {
         "host": settings.host,
         "port": settings.port,

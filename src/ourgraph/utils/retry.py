@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+
 RETRIABLE_EXCEPTIONS = (
     ConnectionError,
     OSError,
@@ -25,18 +27,18 @@ RETRIABLE_EXCEPTIONS = (
 )
 
 
-async def retry_async[**P, T](
-    fn: Callable[P, Awaitable[T]],
-    *args: P.args,
+async def retry_async[T](
+    fn: Callable[..., Awaitable[T]],
+    *args: object,
     max_attempts: int = 3,
     wait_ms: int = 500,
-    **kwargs: P.kwargs,
+    **kwargs: object,
 ) -> T:
     """Retry an async callable up to max_attempts times with linear backoff."""
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
-            return await fn(*args, **kwargs)
+            return await fn(*args, **kwargs)  # type: ignore[misc]
         except RETRIABLE_EXCEPTIONS as exc:
             last_exc = exc
             logger.warning(
@@ -54,18 +56,18 @@ async def retry_async[**P, T](
     raise RuntimeError(message)
 
 
-def retry_sync[**P, T](
-    fn: Callable[P, T],
-    *args: P.args,
+def retry_sync[T](
+    fn: Callable[..., T],
+    *args: object,
     max_attempts: int = 3,
     wait_ms: int = 500,
-    **kwargs: P.kwargs,
+    **kwargs: object,
 ) -> T:
     """Retry a sync callable up to max_attempts times with linear backoff."""
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
-            return fn(*args, **kwargs)
+            return fn(*args, **kwargs)  # type: ignore[misc]
         except RETRIABLE_EXCEPTIONS as exc:
             last_exc = exc
             logger.warning(

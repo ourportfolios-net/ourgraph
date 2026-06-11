@@ -15,9 +15,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class FalkorDBSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="FALKORDB_", env_file=".env", extra="ignore",
+        env_prefix="FALKORDB_",
+        env_file=".env",
+        extra="ignore",
     )
 
+    # Connection via URL (preferred) — e.g. falkor://user:pass@host:port
+    url: str = Field(default="")
+
+    # Fallback: individual fields (ignored if url is set)
     host: str = Field(default="localhost")
     port: int = Field(default=6379)
     username: str = Field(default="")
@@ -27,7 +33,9 @@ class FalkorDBSettings(BaseSettings):
 
 class OllamaSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="OLLAMA_", env_file=".env", extra="ignore",
+        env_prefix="OLLAMA_",
+        env_file=".env",
+        extra="ignore",
     )
 
     base_url: str = Field(default="http://localhost:11434/v1")
@@ -37,25 +45,40 @@ class OllamaSettings(BaseSettings):
     embedding_dim: int = Field(default=768)
 
 
-class DatabaseSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-    supabase_db_url: str = Field(default="")
-    neon_db_url: str = Field(default="")
-
-
 class VnstockSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="VNSTOCK_", env_file=".env", extra="ignore",
+        env_prefix="VNSTOCK_",
+        env_file=".env",
+        extra="ignore",
     )
 
     source: str = Field(default="KBS")
-    api_delay: float = Field(default=1.0)
+    api_delay: float = Field(default=0.0)
+    api_key: str = Field(default="")
+
+    @property
+    def effective_delay(self) -> float:
+        """Return the per-API-call delay based on API tier.
+
+        With an API key:  60 req/min → 1.5s per call (conservative).
+        Without a key:    20 req/min → 4.0s per call.
+        """
+        if self.api_delay > 0:
+            return self.api_delay
+        if self.api_key:
+            return 1.5
+        return 4.0
+
+    @property
+    def has_api_key(self) -> bool:
+        return bool(self.api_key)
 
 
 class PipelineSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="PIPELINE_", env_file=".env", extra="ignore",
+        env_prefix="PIPELINE_",
+        env_file=".env",
+        extra="ignore",
     )
 
     batch_size: int = Field(default=5)
@@ -65,7 +88,9 @@ class PipelineSettings(BaseSettings):
 
 class SchedulerSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="SCHEDULER_", env_file=".env", extra="ignore",
+        env_prefix="SCHEDULER_",
+        env_file=".env",
+        extra="ignore",
     )
 
     cron: str = Field(default="0 7 * * 1-5")
@@ -73,10 +98,66 @@ class SchedulerSettings(BaseSettings):
 
 class GraphitiSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="GRAPHITI_", env_file=".env", extra="ignore",
+        env_prefix="GRAPHITI_",
+        env_file=".env",
+        extra="ignore",
     )
 
     semaphore_limit: int = Field(default=2)
+
+
+class TigerDataSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="TIGER_",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    url: str = Field(default="")
+    api_key: str = Field(default="")
+
+
+class MacroSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="MACRO_",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    # Which sources to enable (comma-separated list)
+    sources: str = Field(default="worldbank,imf,yfinance")
+
+    # Date range for historical data
+    start_year: int = Field(default=2010)
+
+    # yfinance specific
+    yfinance_commodities: str = Field(
+        default="GC=F,CL=F,SI=F,HG=F,^VIX,^GSPC",
+    )
+    yfinance_indices: str = Field(
+        default="^HSI,000001.SS,^SETI,DX-Y.NYB",
+    )
+
+    # World Bank specific
+    worldbank_vn_indicators: str = Field(
+        default=(
+            "NY.GDP.MKTP.CD,"
+            "NY.GDP.MKTP.KD.ZG,"
+            "FP.CPI.TOTL.ZG,"
+            "PA.NUS.FCRF,"
+            "SL.UEM.TOTL.ZS,"
+            "FM.LBL.MQMY.CN,"
+            "BX.KLT.DINV.CD.WD,"
+            "NE.IMP.GNFS.CD,"
+            "NE.EXP.GNFS.CD,"
+            "NV.IND.TOTL.ZS"
+        ),
+    )
+
+    # IMF specific
+    imf_vn_indicators: str = Field(
+        default="PCPI_IX,ENDE_XDC_USD_RATE,FM_LBL_MQMY_CN,FR_INR_LR",
+    )
 
 
 class AppSettings(BaseSettings):
@@ -86,11 +167,12 @@ class AppSettings(BaseSettings):
 
     falkordb: FalkorDBSettings = Field(default_factory=FalkorDBSettings)
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
-    supabase: DatabaseSettings = Field(default_factory=DatabaseSettings)
     vnstock: VnstockSettings = Field(default_factory=VnstockSettings)
     pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
     scheduler: SchedulerSettings = Field(default_factory=SchedulerSettings)
+    tiger_data: TigerDataSettings = Field(default_factory=TigerDataSettings)
     graphiti: GraphitiSettings = Field(default_factory=GraphitiSettings)
+    macro: MacroSettings = Field(default_factory=MacroSettings)
 
 
 @lru_cache(maxsize=1)

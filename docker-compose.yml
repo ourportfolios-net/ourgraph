@@ -4,7 +4,7 @@ services:
     container_name: ourgraph-falkordb
     ports:
       - "${FALKORDB_PORT:-6379}:6379"
-      - "3000:3000" # FalkorDB Browser UI
+      - "3333:3000" # FalkorDB Browser UI
     volumes:
       - falkordb_data:/data
     restart: unless-stopped
